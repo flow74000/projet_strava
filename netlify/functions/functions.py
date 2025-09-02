@@ -3,9 +3,8 @@
 import json
 import os
 from stravalib.client import Client
-from netlify_functions import builder # On importe le décorateur
 
-@builder
+# Le décorateur @builder a été retiré, il n'est pas nécessaire
 def handler(event, context):
     # On récupère les identifiants depuis les variables d'environnement de Netlify
     STRAVA_CLIENT_ID = os.environ.get("STRAVA_CLIENT_ID")
@@ -88,3 +87,4 @@ def handler(event, context):
             'statusCode': 500,
             'body': json.dumps({'error': str(e)})
         }
+
