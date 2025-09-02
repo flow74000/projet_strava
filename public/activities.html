@@ -98,7 +98,7 @@
 
             try {
                 // On appelle notre fonction Netlify
-                const response = await fetch(`/.netlify/functions/strava?code=${code}`);
+                const response = await fetch(`/.netlify/functions/functions?code=${code}`);
                 if (!response.ok) {
                     const errorData = await response.json();
                     throw new Error(errorData.error || `Erreur du serveur (${response.status})`);
