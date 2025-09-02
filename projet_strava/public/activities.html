@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Mes Activités Strava</title>
+    <!-- Mêmes styles que votre version précédente -->
+    <link rel="stylesheet" href="[https://unpkg.com/leaflet@1.9.4/dist/leaflet.css](https://unpkg.com/leaflet@1.9.4/dist/leaflet.css)"/>
+    <link href="[https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap)" rel="stylesheet">
+    <style>
+        :root {
+            --strava-orange: #fc4c02;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-500: #6b7280;
+            --gray-800: #1f2937;
+            --white: #ffffff;
+        }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            margin: 0;
+            padding: 24px;
+            background-color: var(--gray-100); 
+            color: var(--gray-800);
+        }
+        .container { max-width: 1024px; margin: auto; }
+        .card { background-color: var(--white); border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
+        .card-header { border-bottom: 1px solid var(--gray-200); padding-bottom: 16px; margin-bottom: 16px; }
+        .card-header h1 { font-size: 1.875rem; font-weight: 700; margin: 0; }
+        .card-header p { font-size: 1rem; color: var(--gray-500); margin: 4px 0 0; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat { background-color: var(--gray-100); padding: 16px; border-radius: 8px; text-align: center; }
+        .stat h3 { margin: 0 0 8px 0; font-size: 0.875rem; font-weight: 500; color: var(--gray-500); display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .stat p { margin: 0; font-size: 1.5rem; font-weight: 700; }
+        #map { height: 400px; width: 100%; border-radius: 8px; margin-top: 20px; }
+        .chart-container { position: relative; height: 250px; width: 100%; margin-top: 24px; }
+        .history-card h2 { font-size: 1.5rem; font-weight: 700; margin-bottom: 16px; }
+        .activity-table { width: 100%; border-collapse: collapse; }
+        .activity-table th, .activity-table td { padding: 16px; text-align: left; border-bottom: 1px solid var(--gray-200); }
+        .activity-table th { background-color: #f9fafb; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-500); }
+        .activity-table tr:last-child td { border-bottom: none; }
+        .activity-table td { font-weight: 500; }
+        .activity-table tr:hover { background-color: #fafafa; }
+        .strava-orange { color: var(--strava-orange); }
+        #loader { text-align: center; padding: 50px; font-size: 1.2rem; }
+    </style>
+</head>
+<body>
+    <div class="container" id="content" style="display:none;">
+        <!-- Le contenu sera généré ici par JavaScript -->
+    </div>
+    <div id="loader">Chargement de vos activités...</div>
+
+    <script src="[https://unpkg.com/leaflet@1.9.4/dist/leaflet.js](https://unpkg.com/leaflet@1.9.4/dist/leaflet.js)"></script>
+    <script src="[https://cdn.jsdelivr.net/npm/chart.js](https://cdn.jsdelivr.net/npm/chart.js)"></script>
+    <script src="[https://unpkg.com/lucide@latest](https://unpkg.com/lucide@latest)"></script>
+    
+    <script>
+        // --- SCRIPT PRINCIPAL ---
+
+        function decodePolyline(encoded) { /* ... (la fonction de décodage reste la même) ... */ }
+
+        window.addEventListener('load', async function() {
+            const params = new URLSearchParams(window.location.search);
+            const code = params.get('code');
+
+            if (!code) {
+                document.getElementById('loader').textContent = 'Code d\'autorisation manquant. Veuillez vous reconnecter.';
+                return;
+            }
+
+            try {
+                // On appelle notre fonction Netlify
+                const response = await fetch(`/.netlify/functions/strava?code=${code}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // On affiche le contenu
+                renderContent(data);
+                document.getElementById('loader').style.display = 'none';
+                document.getElementById('content').style.display = 'block';
+
+            } catch (error) {
+                document.getElementById('loader').textContent = `Erreur: ${error.message}`;
+                console.error(error);
+            }
+        });
+
+        function renderContent(data) {
+            const { activities, elevation_data } = data;
+            const container = document.getElementById('content');
+            if (!activities || activities.length === 0) return;
+
+            const latest = activities[0];
+            
+            // On construit le HTML dynamiquement
+            let html = `
+                <div class="card">
+                    <div class="card-header">
+                        <p>${latest.start_date_local}</p>
+                        <h1>${latest.name}</h1>
+                    </div>
+                    <div class="stats-grid">
+                        <!-- ... (génération dynamique des stats ici) ... -->
+                    </div>
+                    ${latest.map.summary_polyline ? '<div id="map"></div>' : ''}
+                    ${elevation_data ? '<div class="chart-container"><canvas id="elevationChart"></canvas></div>' : ''}
+                </div>
+                <div class="card history-card">
+                    <h2>Historique</h2>
+                    <table class="activity-table">
+                        <thead>
+                            <tr>
+                                <th>Nom</th>
+                                <th>Date</th>
+                                <th>Durée</th>
+                                <th>Distance</th>
+                                <th>Dénivelé</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${activities.map(activity => `
+                                <tr>
+                                    <td class="strava-orange">${activity.name}</td>
+                                    <td>${new Date(activity.start_date_local).toLocaleDateString('fr-FR')}</td>
+                                    <td>${activity.moving_time}</td>
+                                    <td>${(activity.distance / 1000).toFixed(2)} km</td>
+                                    <td>${Math.round(activity.total_elevation_gain)} m</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            container.innerHTML = html;
+            
+            // On initialise les icônes, la carte et le graphique
+            lucide.createIcons();
+            if (latest.map.summary_polyline) renderMap(latest.map.summary_polyline);
+            if (elevation_data) renderChart(elevation_data);
+        }
+
+        // ... (Les fonctions renderMap et renderChart sont similaires à avant) ...
+        
+    </script>
+</body>
+</html>
