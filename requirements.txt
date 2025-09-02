@@ -1,2 +1,3 @@
 stravalib
 requests
+netlify-functions

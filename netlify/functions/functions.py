@@ -1,9 +1,11 @@
-# Fichier : netlify/functions/strava.py
+# Fichier : netlify/functions/functions.py
 
 import json
 import os
 from stravalib.client import Client
+from netlify_functions import builder # On importe le décorateur
 
+@builder
 def handler(event, context):
     # On récupère les identifiants depuis les variables d'environnement de Netlify
     STRAVA_CLIENT_ID = os.environ.get("STRAVA_CLIENT_ID")
