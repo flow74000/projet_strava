@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <title>Mes Activités Strava</title>
-    <!-- Mêmes styles que votre version précédente -->
     <link rel="stylesheet" href="[https://unpkg.com/leaflet@1.9.4/dist/leaflet.css](https://unpkg.com/leaflet@1.9.4/dist/leaflet.css)"/>
     <link href="[https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap)" rel="stylesheet">
     <style>
@@ -57,7 +56,36 @@
     <script>
         // --- SCRIPT PRINCIPAL ---
 
-        function decodePolyline(encoded) { /* ... (la fonction de décodage reste la même) ... */ }
+        function decodePolyline(encoded) {
+            let len = encoded.length;
+            let index = 0;
+            let lat = 0;
+            let lng = 0;
+            let array = [];
+            while (index < len) {
+                let b;
+                let shift = 0;
+                let result = 0;
+                do {
+                    b = encoded.charCodeAt(index++) - 63;
+                    result |= (b & 0x1f) << shift;
+                    shift += 5;
+                } while (b >= 0x20);
+                let dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+                lat += dlat;
+                shift = 0;
+                result = 0;
+                do {
+                    b = encoded.charCodeAt(index++) - 63;
+                    result |= (b & 0x1f) << shift;
+                    shift += 5;
+                } while (b >= 0x20);
+                let dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+                lng += dlng;
+                array.push([lat * 1e-5, lng * 1e-5]);
+            }
+            return array;
+        }
 
         window.addEventListener('load', async function() {
             const params = new URLSearchParams(window.location.search);
@@ -71,11 +99,11 @@
             try {
                 // On appelle notre fonction Netlify
                 const response = await fetch(`/.netlify/functions/strava?code=${code}`);
-                const data = await response.json();
-
-                if (data.error) {
-                    throw new Error(data.error);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `Erreur du serveur (${response.status})`);
                 }
+                const data = await response.json();
                 
                 // On affiche le contenu
                 renderContent(data);
@@ -91,20 +119,28 @@
         function renderContent(data) {
             const { activities, elevation_data } = data;
             const container = document.getElementById('content');
-            if (!activities || activities.length === 0) return;
+            if (!activities || activities.length === 0) {
+                container.innerHTML = '<h2>Aucune activité trouvée.</h2>';
+                return;
+            };
 
             const latest = activities[0];
             
             // On construit le HTML dynamiquement
+            let statsHtml = `
+                <div class="stat"><h3><i data-lucide="ruler"></i>Distance</h3><p>${(latest.distance / 1000).toFixed(2)} <span style="font-size: 0.7em; color: var(--gray-500);">km</span></p></div>
+                <div class="stat"><h3><i data-lucide="timer"></i>Temps</h3><p>${latest.moving_time}</p></div>
+                <div class="stat"><h3><i data-lucide="trending-up"></i>Dénivelé</h3><p>${Math.round(latest.total_elevation_gain)} <span style="font-size: 0.7em; color: var(--gray-500);">m</span></p></div>
+            `;
+            // ... (Ajoutez les autres stats ici de la même manière)
+
             let html = `
                 <div class="card">
                     <div class="card-header">
                         <p>${latest.start_date_local}</p>
                         <h1>${latest.name}</h1>
                     </div>
-                    <div class="stats-grid">
-                        <!-- ... (génération dynamique des stats ici) ... -->
-                    </div>
+                    <div class="stats-grid">${statsHtml}</div>
                     ${latest.map.summary_polyline ? '<div id="map"></div>' : ''}
                     ${elevation_data ? '<div class="chart-container"><canvas id="elevationChart"></canvas></div>' : ''}
                 </div>
@@ -121,29 +157,79 @@
                             </tr>
                         </thead>
                         <tbody>
-                            ${activities.map(activity => `
+                            ${activities.map(activity => {
+                                const date = new Date(activity.start_date_local);
+                                // Fallback pour les dates invalides
+                                const formattedDate = !isNaN(date) ? date.toLocaleDateString('fr-FR') : activity.start_date_local;
+                                return `
                                 <tr>
                                     <td class="strava-orange">${activity.name}</td>
-                                    <td>${new Date(activity.start_date_local).toLocaleDateString('fr-FR')}</td>
+                                    <td>${formattedDate}</td>
                                     <td>${activity.moving_time}</td>
                                     <td>${(activity.distance / 1000).toFixed(2)} km</td>
                                     <td>${Math.round(activity.total_elevation_gain)} m</td>
                                 </tr>
-                            `).join('')}
+                            `}).join('')}
                         </tbody>
                     </table>
                 </div>
             `;
             container.innerHTML = html;
             
-            // On initialise les icônes, la carte et le graphique
             lucide.createIcons();
             if (latest.map.summary_polyline) renderMap(latest.map.summary_polyline);
             if (elevation_data) renderChart(elevation_data);
         }
 
-        // ... (Les fonctions renderMap et renderChart sont similaires à avant) ...
-        
+        function renderMap(encodedPolyline) {
+            try {
+                const decodedPath = decodePolyline(encodedPolyline);
+                if (decodedPath && decodedPath.length > 0) {
+                    const map = L.map('map');
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; <a href="[https://www.openstreetmap.org/copyright](https://www.openstreetmap.org/copyright)">OpenStreetMap</a> contributors'
+                    }).addTo(map);
+                    const polyline = L.polyline(decodedPath, { color: '#fc4c02', weight: 4 }).addTo(map);
+                    map.fitBounds(polyline.getBounds());
+                }
+            } catch (e) { console.error("Erreur carte:", e); }
+        }
+
+        function renderChart(elevationData) {
+            if (elevationData && elevationData.distance && elevationData.altitude) {
+                const distanceLabels = elevationData.distance.map(d => (d / 1000).toFixed(1));
+                const altitudeData = elevationData.altitude;
+                const ctx = document.getElementById('elevationChart').getContext('2d');
+                const gradient = ctx.createLinearGradient(0, 0, 0, 250);
+                gradient.addColorStop(0, 'rgba(252, 76, 2, 0.4)');
+                gradient.addColorStop(1, 'rgba(252, 76, 2, 0)');
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: distanceLabels,
+                        datasets: [{
+                            label: 'Altitude (m)',
+                            data: altitudeData,
+                            borderColor: '#fc4c02',
+                            backgroundColor: gradient,
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: true,
+                            tension: 0.3
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { title: { display: true, text: 'Distance (km)' } },
+                            y: { title: { display: true, text: 'Altitude (m)' } }
+                        },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            }
+        }
     </script>
 </body>
 </html>

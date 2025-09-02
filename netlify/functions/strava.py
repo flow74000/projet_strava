@@ -49,14 +49,20 @@ def handler(event, context):
         # On prépare les données pour les renvoyer en format JSON
         activities_json = []
         for activity in activities:
+            # Conversion des objets Quanty en float pour la sérialisation JSON
+            distance_meters = float(activity.distance)
+            elevation_meters = float(activity.total_elevation_gain)
+            avg_speed_mps = float(activity.average_speed) if activity.average_speed else 0
+            max_speed_mps = float(activity.max_speed) if activity.max_speed else 0
+            
             activities_json.append({
                 'name': activity.name,
                 'start_date_local': activity.start_date_local.strftime('%A %d %B %Y'),
                 'moving_time': str(activity.moving_time),
-                'distance': activity.distance,
-                'total_elevation_gain': activity.total_elevation_gain,
-                'average_speed': activity.average_speed,
-                'max_speed': activity.max_speed,
+                'distance': distance_meters,
+                'total_elevation_gain': elevation_meters,
+                'average_speed': avg_speed_mps,
+                'max_speed': max_speed_mps,
                 'has_heartrate': activity.has_heartrate,
                 'average_heartrate': activity.average_heartrate,
                 'max_heartrate': activity.max_heartrate,
