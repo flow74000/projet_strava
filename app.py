@@ -1,6 +1,7 @@
-# Fichier: app.py (Version corrigée pour gérer les objets Quantity)
+# Fichier: app.py (Version avec débogage d'erreur forcé)
 
 import os
+import traceback # <-- AJOUT POUR LE DÉBOGAGE
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from stravalib.client import Client
@@ -12,7 +13,7 @@ CORS(app)
 def strava_handler():
     STRAVA_CLIENT_ID = os.environ.get("STRAVA_CLIENT_ID")
     STRAVA_CLIENT_SECRET = os.environ.get("STRAVA_CLIENT_SECRET")
-    
+
     code = request.args.get('code')
     if not code:
         return jsonify({'error': 'Code manquant'}), 400
@@ -24,32 +25,31 @@ def strava_handler():
             client_secret=STRAVA_CLIENT_SECRET,
             code=code
         )
-        
+
         access_token = token_response['access_token']
         authed_client = Client(access_token=access_token)
         activities = list(authed_client.get_activities(limit=10))
-        
+
         activities_json = []
         for activity in activities:
-            # --- CORRECTION ICI : On accède au nombre avec .num pour les objets complexes ---
             activities_json.append({
                 'name': getattr(activity, 'name', 'Activité sans nom'),
                 'start_date_local': activity.start_date_local.isoformat() if hasattr(activity, 'start_date_local') else None,
                 'moving_time': str(getattr(activity, 'moving_time', '0')),
-                'distance': float(getattr(activity, 'distance', 0)), # .distance est déjà un float simple
-                'total_elevation_gain': float(getattr(activity, 'total_elevation_gain', 0)), # idem
-                'average_speed': float(getattr(activity.average_speed, 'num', 0)), # Correction : on utilise .num
-                'max_speed': float(getattr(activity.max_speed, 'num', 0)), # Correction : on utilise .num
+                'distance': float(getattr(activity, 'distance', 0)),
+                'total_elevation_gain': float(getattr(activity, 'total_elevation_gain', 0)),
+                'average_speed': float(getattr(activity.average_speed, 'num', 0)),
+                'max_speed': float(getattr(activity.max_speed, 'num', 0)),
                 'has_heartrate': getattr(activity, 'has_heartrate', False),
                 'average_heartrate': float(getattr(activity, 'average_heartrate', 0)),
                 'max_heartrate': float(getattr(activity, 'max_heartrate', 0)),
                 'average_watts': float(getattr(activity, 'average_watts', 0)),
                 'max_watts': float(getattr(activity, 'max_watts', 0)),
-                'map': {'summary_polyline': activity.map.summary_polyline} if hasattr(activity, 'map') and activity.map.summary_poline else None
+                'map': {'summary_polyline': activity.map.summary_poline} if hasattr(activity, 'map') and activity.map.summary_poline else None
             })
-            
+
         latest_activity_map_polyline = activities_json[0]['map']['summary_polyline'] if activities and activities_json[0].get('map') else None
-        
+
         elevation_data = None
         if activities:
             latest_activity_id = getattr(activities[0], 'id', None)
@@ -67,4 +67,9 @@ def strava_handler():
         })
 
     except Exception as e:
+        # --- AJOUT CRUCIAL ICI ---
+        # On imprime l'erreur complète dans les logs de Render
+        print("!!! ERREUR DÉTECTÉE DANS LE BLOC TRY/EXCEPT !!!")
+        print(traceback.format_exc())
+        # --- FIN DE L'AJOUT ---
         return jsonify({'error': str(e)}), 500
