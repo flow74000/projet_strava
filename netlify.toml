@@ -1,8 +1,12 @@
+# Section pour le build du site statique
 [build]
-  command = "pip install -r requirements.txt"
-  functions = "netlify/functions"
   publish = "public"
 
+# Section dédiée à la configuration des fonctions serverless
+[functions]
+  directory = "netlify/functions"
+
+# Vos règles de redirection (cette partie est correcte)
 [[redirects]]
   from = "/"
   to = "/index.html"
