@@ -1,4 +1,4 @@
-# Fichier: app.py (Version stable qui fonctionnait)
+# Fichier: app.py (Version avec ajout de la carte)
 
 import os
 from flask import Flask, jsonify, request
@@ -32,7 +32,6 @@ def strava_handler():
         
         activities_json = []
         for activity in activities:
-            # On formate un objet simple avec les données de base
             activities_json.append({
                 'name': activity.name,
                 'start_date_local': activity.start_date_local.isoformat(),
@@ -40,10 +39,18 @@ def strava_handler():
                 'distance': float(activity.distance or 0),
                 'total_elevation_gain': float(activity.total_elevation_gain or 0)
             })
+        
+        # --- AJOUT POUR LA CARTE ---
+        # On récupère le tracé de la dernière activité si elle existe
+        latest_activity_map_polyline = None
+        if activities and activities[0].map and activities[0].map.summary_polyline:
+            latest_activity_map_polyline = activities[0].map.summary_polyline
+        # --- FIN DE L'AJOUT ---
 
-        # On renvoie la liste simple des activités
+        # On renvoie la liste des activités ET le tracé de la carte
         return jsonify({
-            "activities": activities_json
+            "activities": activities_json,
+            "latest_activity_map": latest_activity_map_polyline # Nouvelle donnée
         })
 
     except Exception as e:
