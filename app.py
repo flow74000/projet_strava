@@ -1,4 +1,4 @@
-# Fichier: app.py (Version avec statistiques détaillées)
+# Fichier: app.py (Version corrigée pour gérer les objets Quantity)
 
 import os
 from flask import Flask, jsonify, request
@@ -31,24 +31,24 @@ def strava_handler():
         
         activities_json = []
         for activity in activities:
-            # --- MODIFICATION ICI : On ajoute toutes les statistiques détaillées ---
+            # --- CORRECTION ICI : On accède au nombre avec .num pour les objets complexes ---
             activities_json.append({
                 'name': getattr(activity, 'name', 'Activité sans nom'),
                 'start_date_local': activity.start_date_local.isoformat() if hasattr(activity, 'start_date_local') else None,
                 'moving_time': str(getattr(activity, 'moving_time', '0')),
-                'distance': float(getattr(activity, 'distance', 0)),
-                'total_elevation_gain': float(getattr(activity, 'total_elevation_gain', 0)),
-                'average_speed': float(getattr(activity, 'average_speed', 0)),
-                'max_speed': float(getattr(activity, 'max_speed', 0)),
+                'distance': float(getattr(activity, 'distance', 0)), # .distance est déjà un float simple
+                'total_elevation_gain': float(getattr(activity, 'total_elevation_gain', 0)), # idem
+                'average_speed': float(getattr(activity.average_speed, 'num', 0)), # Correction : on utilise .num
+                'max_speed': float(getattr(activity.max_speed, 'num', 0)), # Correction : on utilise .num
                 'has_heartrate': getattr(activity, 'has_heartrate', False),
                 'average_heartrate': float(getattr(activity, 'average_heartrate', 0)),
                 'max_heartrate': float(getattr(activity, 'max_heartrate', 0)),
                 'average_watts': float(getattr(activity, 'average_watts', 0)),
                 'max_watts': float(getattr(activity, 'max_watts', 0)),
-                'map': {'summary_polyline': activity.map.summary_polyline} if hasattr(activity, 'map') and activity.map.summary_polyline else None
+                'map': {'summary_polyline': activity.map.summary_polyline} if hasattr(activity, 'map') and activity.map.summary_poline else None
             })
             
-        latest_activity_map_polyline = activities_json[0]['map']['summary_polyline'] if activities and activities_json[0]['map'] else None
+        latest_activity_map_polyline = activities_json[0]['map']['summary_polyline'] if activities and activities_json[0].get('map') else None
         
         elevation_data = None
         if activities:
