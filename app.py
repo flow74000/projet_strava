@@ -1,4 +1,4 @@
-# Fichier: app.py (Version avec ajout de la carte)
+# Fichier: app.py (Version avec carte + graphique)
 
 import os
 from flask import Flask, jsonify, request
@@ -40,17 +40,33 @@ def strava_handler():
                 'total_elevation_gain': float(activity.total_elevation_gain or 0)
             })
         
-        # --- AJOUT POUR LA CARTE ---
-        # On récupère le tracé de la dernière activité si elle existe
         latest_activity_map_polyline = None
-        if activities and activities[0].map and activities[0].map.summary_polyline:
-            latest_activity_map_polyline = activities[0].map.summary_polyline
-        # --- FIN DE L'AJOUT ---
+        elevation_data = None # On initialise la variable pour le graphique
 
-        # On renvoie la liste des activités ET le tracé de la carte
+        if activities:
+            # On récupère le tracé pour la carte
+            if activities[0].map and activities[0].map.summary_polyline:
+                latest_activity_map_polyline = activities[0].map.summary_polyline
+
+            # --- AJOUT POUR LE GRAPHIQUE ---
+            # On récupère les "streams" (données détaillées) de la dernière activité
+            latest_activity_id = activities[0].id
+            streams = authed_client.get_activity_streams(
+                latest_activity_id, 
+                types=['distance', 'altitude']
+            )
+            # On s'assure que les deux flux de données sont présents
+            if streams and 'distance' in streams and 'altitude' in streams:
+                elevation_data = {
+                    'distance': streams['distance'].data,
+                    'altitude': streams['altitude'].data
+                }
+            # --- FIN DE L'AJOUT ---
+
         return jsonify({
             "activities": activities_json,
-            "latest_activity_map": latest_activity_map_polyline # Nouvelle donnée
+            "latest_activity_map": latest_activity_map_polyline,
+            "elevation_data": elevation_data # Nouvelle donnée
         })
 
     except Exception as e:
