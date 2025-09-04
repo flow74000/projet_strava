@@ -2,234 +2,198 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mes Activités Strava</title>
-    <link rel="stylesheet" href="[https://unpkg.com/leaflet@1.9.4/dist/leaflet.css](https://unpkg.com/leaflet@1.9.4/dist/leaflet.css)"/>
-    <link href="[https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap)" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        :root {
-            --strava-orange: #fc4c02;
-            --gray-100: #f3f4f6;
-            --gray-200: #e5e7eb;
-            --gray-500: #6b7280;
-            --gray-800: #1f2937;
-            --white: #ffffff;
-        }
-        body { 
-            font-family: 'Inter', sans-serif; 
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
             margin: 0;
-            padding: 24px;
-            background-color: var(--gray-100); 
-            color: var(--gray-800);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
-        .container { max-width: 1024px; margin: auto; }
-        .card { background-color: var(--white); border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
-        .card-header { border-bottom: 1px solid var(--gray-200); padding-bottom: 16px; margin-bottom: 16px; }
-        .card-header h1 { font-size: 1.875rem; font-weight: 700; margin: 0; }
-        .card-header p { font-size: 1rem; color: var(--gray-500); margin: 4px 0 0; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px; }
-        .stat { background-color: var(--gray-100); padding: 16px; border-radius: 8px; text-align: center; }
-        .stat h3 { margin: 0 0 8px 0; font-size: 0.875rem; font-weight: 500; color: var(--gray-500); display: flex; align-items: center; justify-content: center; gap: 8px; }
-        .stat p { margin: 0; font-size: 1.5rem; font-weight: 700; }
-        #map { height: 400px; width: 100%; border-radius: 8px; margin-top: 20px; }
-        .chart-container { position: relative; height: 250px; width: 100%; margin-top: 24px; }
-        .history-card h2 { font-size: 1.5rem; font-weight: 700; margin-bottom: 16px; }
-        .activity-table { width: 100%; border-collapse: collapse; }
-        .activity-table th, .activity-table td { padding: 16px; text-align: left; border-bottom: 1px solid var(--gray-200); }
-        .activity-table th { background-color: #f9fafb; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-500); }
-        .activity-table tr:last-child td { border-bottom: none; }
-        .activity-table td { font-weight: 500; }
-        .activity-table tr:hover { background-color: #fafafa; }
-        .strava-orange { color: var(--strava-orange); }
-        #loader { text-align: center; padding: 50px; font-size: 1.2rem; }
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1, h2 {
+            color: #fc4c02; /* Couleur orange de Strava */
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        #status {
+            font-size: 1.2em;
+            font-weight: bold;
+            text-align: center;
+            padding: 40px;
+        }
+        .activity {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .activity h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .activity p {
+            margin: 5px 0;
+            font-size: 0.9em;
+        }
+        .activity strong {
+            color: #555;
+        }
+        .chart-container {
+            margin-bottom: 30px;
+        }
     </style>
 </head>
 <body>
-    <div class="container" id="content" style="display:none;">
-        <!-- Le contenu sera généré ici par JavaScript -->
+
+    <div class="container">
+        <h1>Mes Activités Strava</h1>
+
+        <div id="status">Chargement des données...</div>
+
+        <div class="chart-container" style="display: none;">
+            <h2>Profil d'altitude (Dernière activité)</h2>
+            <canvas id="elevationChart"></canvas>
+        </div>
+
+        <div id="activities-container"></div>
     </div>
-    <div id="loader">Chargement de vos activités...</div>
 
-    <script src="[https://unpkg.com/leaflet@1.9.4/dist/leaflet.js](https://unpkg.com/leaflet@1.9.4/dist/leaflet.js)"></script>
-    <script src="[https://cdn.jsdelivr.net/npm/chart.js](https://cdn.jsdelivr.net/npm/chart.js)"></script>
-    <script src="[https://unpkg.com/lucide@latest](https://unpkg.com/lucide@latest)"></script>
-    
     <script>
-        // --- SCRIPT PRINCIPAL ---
+        // Attend que la page soit entièrement chargée
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            // ####################################################################
+            // ## IMPORTANT : REMPLACEZ CETTE URL PAR CELLE DE VOTRE API RENDER ##
+            // ####################################################################
+            const API_URL = "https://projet-strava-api.onrender.com/api/strava";
 
-        function decodePolyline(encoded) {
-            let len = encoded.length;
-            let index = 0;
-            let lat = 0;
-            let lng = 0;
-            let array = [];
-            while (index < len) {
-                let b;
-                let shift = 0;
-                let result = 0;
-                do {
-                    b = encoded.charCodeAt(index++) - 63;
-                    result |= (b & 0x1f) << shift;
-                    shift += 5;
-                } while (b >= 0x20);
-                let dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
-                lat += dlat;
-                shift = 0;
-                result = 0;
-                do {
-                    b = encoded.charCodeAt(index++) - 63;
-                    result |= (b & 0x1f) << shift;
-                    shift += 5;
-                } while (b >= 0x20);
-                let dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
-                lng += dlng;
-                array.push([lat * 1e-5, lng * 1e-5]);
-            }
-            return array;
-        }
+            const statusDiv = document.getElementById('status');
+            const activitiesContainer = document.getElementById('activities-container');
+            const chartContainer = document.querySelector('.chart-container');
 
-        window.addEventListener('load', async function() {
-            const params = new URLSearchParams(window.location.search);
-            const code = params.get('code');
+            // 1. On récupère le paramètre 'code' depuis l'URL de la page
+            const urlParams = new URLSearchParams(window.location.search);
+            const stravaCode = urlParams.get('code');
 
-            if (!code) {
-                document.getElementById('loader').textContent = 'Code d\'autorisation manquant. Veuillez vous reconnecter.';
+            // 2. Si le code n'est pas présent, on affiche une erreur
+            if (!stravaCode) {
+                statusDiv.textContent = "Erreur : Code d'autorisation Strava manquant. Veuillez vous authentifier à nouveau.";
+                statusDiv.style.color = 'red';
                 return;
             }
 
-            try {
-                // On appelle notre fonction Netlify
-                const response = await fetch(`/.netlify/functions/functions?code=${code}`);
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || `Erreur du serveur (${response.status})`);
-                }
-                const data = await response.json();
-                
-                // On affiche le contenu
-                renderContent(data);
-                document.getElementById('loader').style.display = 'none';
-                document.getElementById('content').style.display = 'block';
+            // 3. On appelle notre API backend sur Render avec le code
+            fetch(`${API_URL}?code=${stravaCode}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Erreur du serveur : ${response.statusText}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // On cache le message "Chargement..."
+                    statusDiv.style.display = 'none';
 
-            } catch (error) {
-                document.getElementById('loader').textContent = `Erreur: ${error.message}`;
-                console.error(error);
-            }
+                    // On vérifie s'il y a des activités
+                    if (data.activities && data.activities.length > 0) {
+                        displayActivities(data.activities);
+                    } else {
+                        activitiesContainer.innerHTML = "<p>Aucune activité trouvée.</p>";
+                    }
+                    
+                    // On vérifie s'il y a des données pour le graphique
+                    if (data.elevation_data) {
+                        chartContainer.style.display = 'block';
+                        renderElevationChart(data.elevation_data);
+                    }
+                })
+                .catch(error => {
+                    console.error("Erreur lors de la récupération des données :", error);
+                    statusDiv.textContent = `Une erreur est survenue : ${error.message}. Vérifiez la console pour plus de détails.`;
+                    statusDiv.style.color = 'red';
+                });
         });
 
-        function renderContent(data) {
-            const { activities, elevation_data } = data;
-            const container = document.getElementById('content');
-            if (!activities || activities.length === 0) {
-                container.innerHTML = '<h2>Aucune activité trouvée.</h2>';
-                return;
-            };
+        // Fonction pour afficher les activités dans le HTML
+        function displayActivities(activities) {
+            const container = document.getElementById('activities-container');
+            container.innerHTML = '<h2>Dernières activités</h2>'; // Réinitialise le conteneur avec un titre
 
-            const latest = activities[0];
-            
-            // On construit le HTML dynamiquement
-            let statsHtml = `
-                <div class="stat"><h3><i data-lucide="ruler"></i>Distance</h3><p>${(latest.distance / 1000).toFixed(2)} <span style="font-size: 0.7em; color: var(--gray-500);">km</span></p></div>
-                <div class="stat"><h3><i data-lucide="timer"></i>Temps</h3><p>${latest.moving_time}</p></div>
-                <div class="stat"><h3><i data-lucide="trending-up"></i>Dénivelé</h3><p>${Math.round(latest.total_elevation_gain)} <span style="font-size: 0.7em; color: var(--gray-500);">m</span></p></div>
-            `;
-            // ... (Ajoutez les autres stats ici de la même manière)
+            activities.forEach(activity => {
+                // Convertir les distances en km et les vitesses en km/h
+                const distanceKm = (activity.distance / 1000).toFixed(2);
+                const elevation = activity.total_elevation_gain.toFixed(0);
 
-            let html = `
-                <div class="card">
-                    <div class="card-header">
-                        <p>${latest.start_date_local}</p>
-                        <h1>${latest.name}</h1>
-                    </div>
-                    <div class="stats-grid">${statsHtml}</div>
-                    ${latest.map.summary_polyline ? '<div id="map"></div>' : ''}
-                    ${elevation_data ? '<div class="chart-container"><canvas id="elevationChart"></canvas></div>' : ''}
-                </div>
-                <div class="card history-card">
-                    <h2>Historique</h2>
-                    <table class="activity-table">
-                        <thead>
-                            <tr>
-                                <th>Nom</th>
-                                <th>Date</th>
-                                <th>Durée</th>
-                                <th>Distance</th>
-                                <th>Dénivelé</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${activities.map(activity => {
-                                const date = new Date(activity.start_date_local);
-                                // Fallback pour les dates invalides
-                                const formattedDate = !isNaN(date) ? date.toLocaleDateString('fr-FR') : activity.start_date_local;
-                                return `
-                                <tr>
-                                    <td class="strava-orange">${activity.name}</td>
-                                    <td>${formattedDate}</td>
-                                    <td>${activity.moving_time}</td>
-                                    <td>${(activity.distance / 1000).toFixed(2)} km</td>
-                                    <td>${Math.round(activity.total_elevation_gain)} m</td>
-                                </tr>
-                            `}).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            `;
-            container.innerHTML = html;
-            
-            lucide.createIcons();
-            if (latest.map.summary_polyline) renderMap(latest.map.summary_polyline);
-            if (elevation_data) renderChart(elevation_data);
+                const activityElement = document.createElement('div');
+                activityElement.className = 'activity';
+                activityElement.innerHTML = `
+                    <h3>${activity.name}</h3>
+                    <p><strong>Date :</strong> ${activity.start_date_local}</p>
+                    <p><strong>Temps :</strong> ${activity.moving_time}</p>
+                    <p><strong>Distance :</strong> ${distanceKm} km</p>
+                    <p><strong>Dénivelé :</strong> ${elevation} m</p>
+                `;
+                container.appendChild(activityElement);
+            });
         }
-
-        function renderMap(encodedPolyline) {
-            try {
-                const decodedPath = decodePolyline(encodedPolyline);
-                if (decodedPath && decodedPath.length > 0) {
-                    const map = L.map('map');
-                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                        attribution: '&copy; <a href="[https://www.openstreetmap.org/copyright](https://www.openstreetmap.org/copyright)">OpenStreetMap</a> contributors'
-                    }).addTo(map);
-                    const polyline = L.polyline(decodedPath, { color: '#fc4c02', weight: 4 }).addTo(map);
-                    map.fitBounds(polyline.getBounds());
-                }
-            } catch (e) { console.error("Erreur carte:", e); }
-        }
-
-        function renderChart(elevationData) {
-            if (elevationData && elevationData.distance && elevationData.altitude) {
-                const distanceLabels = elevationData.distance.map(d => (d / 1000).toFixed(1));
-                const altitudeData = elevationData.altitude;
-                const ctx = document.getElementById('elevationChart').getContext('2d');
-                const gradient = ctx.createLinearGradient(0, 0, 0, 250);
-                gradient.addColorStop(0, 'rgba(252, 76, 2, 0.4)');
-                gradient.addColorStop(1, 'rgba(252, 76, 2, 0)');
-                new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: distanceLabels,
-                        datasets: [{
-                            label: 'Altitude (m)',
-                            data: altitudeData,
-                            borderColor: '#fc4c02',
-                            backgroundColor: gradient,
-                            borderWidth: 2,
-                            pointRadius: 0,
-                            fill: true,
-                            tension: 0.3
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: {
-                            x: { title: { display: true, text: 'Distance (km)' } },
-                            y: { title: { display: true, text: 'Altitude (m)' } }
+        
+        // Fonction pour dessiner le graphique
+        function renderElevationChart(elevationData) {
+            const ctx = document.getElementById('elevationChart').getContext('2d');
+            
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: elevationData.distance.map(d => (d / 1000).toFixed(1)), // Distance en km pour l'axe X
+                    datasets: [{
+                        label: 'Altitude (m)',
+                        data: elevationData.altitude, // Altitude pour l'axe Y
+                        borderColor: 'rgba(252, 76, 2, 0.8)',
+                        backgroundColor: 'rgba(252, 76, 2, 0.1)',
+                        fill: true,
+                        borderWidth: 2,
+                        pointRadius: 0, // On ne montre pas les points pour un tracé plus lisse
+                        tension: 0.1 // Lissage de la courbe
+                    }]
+                },
+                options: {
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Distance (km)'
+                            }
                         },
-                        plugins: { legend: { display: false } }
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Altitude (m)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
                     }
-                });
-            }
+                }
+            });
         }
+
     </script>
 </body>
 </html>
