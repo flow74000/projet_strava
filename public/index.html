@@ -2,35 +2,61 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Connexion à Strava</title>
     <style>
-        body { font-family: 'Inter', sans-serif; text-align: center; margin-top: 100px; background-color: #f3f4f6; }
-        .strava-connect { 
-            display: inline-block;
-            text-decoration: none; 
-            padding: 15px 30px; 
-            background-color: #fc4c02; 
-            color: white; 
-            border-radius: 8px; 
-            font-weight: bold;
-            transition: background-color 0.2s;
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f4f4f4;
+            color: #333;
+            text-align: center;
         }
-        .strava-connect:hover { background-color: #e04402; }
+        .container {
+            padding: 40px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        p {
+            margin-bottom: 30px;
+            color: #666;
+        }
+        .strava-button {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #fc4c02; /* Couleur orange de Strava */
+            color: white;
+            text-decoration: none;
+            font-weight: bold;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+        .strava-button:hover {
+            background-color: #e04402;
+        }
     </style>
 </head>
 <body>
-    <h1>Mes Données Strava</h1>
-    <p>Cliquez ci-dessous pour vous connecter et voir vos dernières activités.</p>
-    <a class="strava-connect" href="#" id="login-button">Se connecter avec Strava</a>
 
-    <script>
-        const STRAVA_CLIENT_ID = "157710";
-        const NETLIFY_SITE_URL = "[https://coachvelo.netlify.app](https://coachvelo.netlify.app)";
-        const REDIRECT_URI = `${NETLIFY_SITE_URL}/activities.html`;
-        
-        const authorizeUrl = `https://www.strava.com/oauth/authorize?client_id=${STRAVA_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=code&scope=read,activity:read_all`;
-        
-        document.getElementById('login-button').href = authorizeUrl;
-    </script>
+    <div class="container">
+        <h1>Projet Strava</h1>
+        <p>Cliquez sur le bouton ci-dessous pour vous connecter à votre compte Strava<br>et afficher vos dernières activités.</p>
+
+        <a 
+            class="strava-button"
+            href="https://www.strava.com/oauth/authorize?client_id=VOTRE_CLIENT_ID&response_type=code&redirect_uri=https://VOTRE_SITE_STATIQUE.onrender.com/activities.html&approval_prompt=force&scope=read,activity:read_all"
+        >
+            Se connecter avec Strava
+        </a>
+        </div>
+
 </body>
 </html>
