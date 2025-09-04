@@ -1,4 +1,4 @@
-# Fichier: app.py (Version stable avec carte + graphique)
+# Fichier: app.py (Version avec statistiques détaillées)
 
 import os
 from flask import Flask, jsonify, request
@@ -14,7 +14,6 @@ def strava_handler():
     STRAVA_CLIENT_SECRET = os.environ.get("STRAVA_CLIENT_SECRET")
     
     code = request.args.get('code')
-
     if not code:
         return jsonify({'error': 'Code manquant'}), 400
 
@@ -32,33 +31,34 @@ def strava_handler():
         
         activities_json = []
         for activity in activities:
+            # --- MODIFICATION ICI : On ajoute toutes les statistiques détaillées ---
             activities_json.append({
-                'name': activity.name,
-                'start_date_local': activity.start_date_local.isoformat(),
-                'moving_time': str(activity.moving_time),
-                'distance': float(activity.distance or 0),
-                'total_elevation_gain': float(activity.total_elevation_gain or 0)
+                'name': getattr(activity, 'name', 'Activité sans nom'),
+                'start_date_local': activity.start_date_local.isoformat() if hasattr(activity, 'start_date_local') else None,
+                'moving_time': str(getattr(activity, 'moving_time', '0')),
+                'distance': float(getattr(activity, 'distance', 0)),
+                'total_elevation_gain': float(getattr(activity, 'total_elevation_gain', 0)),
+                'average_speed': float(getattr(activity, 'average_speed', 0)),
+                'max_speed': float(getattr(activity, 'max_speed', 0)),
+                'has_heartrate': getattr(activity, 'has_heartrate', False),
+                'average_heartrate': float(getattr(activity, 'average_heartrate', 0)),
+                'max_heartrate': float(getattr(activity, 'max_heartrate', 0)),
+                'average_watts': float(getattr(activity, 'average_watts', 0)),
+                'max_watts': float(getattr(activity, 'max_watts', 0)),
+                'map': {'summary_polyline': activity.map.summary_polyline} if hasattr(activity, 'map') and activity.map.summary_polyline else None
             })
+            
+        latest_activity_map_polyline = activities_json[0]['map']['summary_polyline'] if activities and activities_json[0]['map'] else None
         
-        latest_activity_map_polyline = None
         elevation_data = None
-
         if activities:
-            # Récupération du tracé pour la carte
-            if activities[0].map and activities[0].map.summary_polyline:
-                latest_activity_map_polyline = activities[0].map.summary_polyline
-
-            # Récupération des données pour le graphique
-            latest_activity_id = activities[0].id
-            streams = authed_client.get_activity_streams(
-                latest_activity_id, 
-                types=['distance', 'altitude']
-            )
-            if streams and 'distance' in streams and 'altitude' in streams:
-                elevation_data = {
-                    'distance': streams['distance'].data,
-                    'altitude': streams['altitude'].data
-                }
+            latest_activity_id = getattr(activities[0], 'id', None)
+            if latest_activity_id:
+                streams = authed_client.get_activity_streams(
+                    latest_activity_id, types=['distance', 'altitude']
+                )
+                if streams and 'distance' in streams and 'altitude' in streams:
+                    elevation_data = { 'distance': streams['distance'].data, 'altitude': streams['altitude'].data }
 
         return jsonify({
             "activities": activities_json,

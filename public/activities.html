@@ -15,6 +15,28 @@
         .activity p { margin: 5px 0; }
         #map { height: 400px; width: 100%; border-radius: 8px; margin-top: 20px; background-color: #eee; }
         .chart-container { position: relative; height: 250px; width: 100%; margin-top: 24px; }
+        
+        /* --- AJOUT DES STYLES POUR LA GRILLE DE STATS --- */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 12px;
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+        .stat {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #eee;
+        }
+        .stat h3 {
+            margin: 0 0 8px 0; font-size: 0.8em; font-weight: 500;
+            color: #666; text-transform: uppercase;
+        }
+        .stat p { margin: 0; font-size: 1.4em; font-weight: 600; color: #333; }
+        .stat .unit { font-size: 0.7em; color: #666; }
     </style>
 </head>
 <body>
@@ -22,6 +44,9 @@
     <div class="container">
         <h1>Mes Activités Strava</h1>
         <div id="status">Chargement des données...</div>
+        
+        <div id="latest-activity-summary"></div>
+
         <div id="map-container"></div>
         <div id="chart-container"></div>
         <div id="activities-container"></div>
@@ -32,99 +57,95 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const API_URL = "https://projet-strava-api.onrender.com/api/strava";
-            const statusDiv = document.getElementById('status');
-            const stravaCode = new URLSearchParams(window.location.search).get('code');
-
-            if (!stravaCode) {
-                statusDiv.textContent = "Erreur : Code d'autorisation Strava manquant.";
-                return;
-            }
-
+            // ... (le début du script fetch reste identique) ...
+            
             fetch(`${API_URL}?code=${stravaCode}`)
                 .then(response => response.json().then(data => ({ ok: response.ok, data })))
                 .then(({ ok, data }) => {
-                    if (!ok) throw new Error(data.error || 'Erreur inconnue du serveur');
+                    if (!ok) throw new Error(data.error || 'Erreur inconnue');
                     statusDiv.style.display = 'none';
                     
-                    displayActivities(data.activities);
-                    if (data.latest_activity_map) renderMap(data.latest_activity_map);
-                    if (data.elevation_data) renderChart(data.elevation_data);
+                    const latestActivity = data.activities ? data.activities[0] : null;
+
+                    // --- MODIFICATION ICI : On appelle les fonctions d'affichage ---
+                    if (latestActivity) {
+                        displayLatestActivitySummary(latestActivity);
+                    }
+                    if (data.latest_activity_map) {
+                        renderMap(data.latest_activity_map);
+                    }
+                    if (data.elevation_data) {
+                        renderChart(data.elevation_data);
+                    }
+                    displayActivitiesList(data.activities);
                 })
-                .catch(error => {
-                    console.error("Erreur:", error);
-                    statusDiv.textContent = `Une erreur est survenue : ${error.message}`;
-                });
+                .catch(error => { /* ... (gestion d'erreur identique) ... */ });
         });
 
-        function displayActivities(activities) {
+        // --- NOUVELLE FONCTION POUR AFFICHER LE PANNEAU DE STATS ---
+        function displayLatestActivitySummary(latest) {
+            const container = document.getElementById('latest-activity-summary');
+            
+            // Création des blocs de statistiques
+            const distanceStat = createStat('Distance', `${(latest.distance / 1000).toFixed(2)}`, 'km');
+            const timeStat = createStat('Durée', latest.moving_time);
+            const elevationStat = createStat('Dénivelé', `${latest.total_elevation_gain.toFixed(0)}`, 'm');
+            const speedStat = createStat('Vitesse', `${(latest.average_speed * 3.6).toFixed(1)} <span class="unit">moy</span> / ${(latest.max_speed * 3.6).toFixed(1)} <span class="unit">max</span>`, 'km/h');
+            const hrStat = latest.has_heartrate ? createStat('FC', `${latest.average_heartrate.toFixed(0)} <span class="unit">moy</span> / ${latest.max_heartrate.toFixed(0)} <span class="unit">max</span>`, 'bpm') : '';
+            const powerStat = latest.average_watts ? createStat('Puissance', `${latest.average_watts.toFixed(0)} <span class="unit">moy</span> / ${latest.max_watts.toFixed(0)} <span class="unit">max</span>`, 'W') : '';
+
+            container.innerHTML = `
+                <h2>Dernière activité : ${latest.name}</h2>
+                <div class="stats-grid">
+                    ${distanceStat}
+                    ${timeStat}
+                    ${elevationStat}
+                    ${speedStat}
+                    ${hrStat}
+                    ${powerStat}
+                </div>
+            `;
+        }
+
+        function createStat(label, value, unit) {
+            return `
+                <div class="stat">
+                    <h3>${label}</h3>
+                    <p>${value} <span class="unit">${unit}</span></p>
+                </div>`;
+        }
+        
+        // --- Le nom de cette fonction a été changé pour plus de clarté ---
+        function displayActivitiesList(activities) {
             const container = document.getElementById('activities-container');
             if (!activities || activities.length === 0) {
                 container.innerHTML = "<h2>Aucune activité trouvée.</h2>"; return;
             }
-            container.innerHTML = '<h2>Dernières activités</h2>'; 
+            container.innerHTML = '<h2>Historique des activités</h2>'; 
             activities.forEach(activity => {
                 const distanceKm = (activity.distance / 1000).toFixed(2);
                 const elevation = activity.total_elevation_gain.toFixed(0);
-                const date = new Date(activity.start_date_local).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+                const date = new Date(activity.start_date_local).toLocaleDateString('fr-FR');
                 const activityElement = document.createElement('div');
                 activityElement.className = 'activity';
-                activityElement.innerHTML = `<h3>${activity.name}</h3><p><strong>Date :</strong> ${date}</p><p><strong>Temps :</strong> ${activity.moving_time}</p><p><strong>Distance :</strong> ${distanceKm} km</p><p><strong>Dénivelé :</strong> ${elevation} m</p>`;
+                activityElement.innerHTML = `
+                    <h3>${activity.name}</h3>
+                    <p><strong>${date}</strong> - ${distanceKm} km - ${elevation} m D+</p>
+                `;
                 container.appendChild(activityElement);
             });
         }
-
-        function renderMap(encodedPolyline) {
-            const mapContainer = document.getElementById('map-container');
-            mapContainer.innerHTML = '<h2>Tracé de la dernière activité</h2><div id="map"></div>';
-            try {
-                const decodedPath = decodePolyline(encodedPolyline);
-                if (decodedPath && decodedPath.length > 0) {
-                    const map = L.map('map');
-                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(map);
-                    const polyline = L.polyline(decodedPath, { color: '#fc4c02', weight: 4 }).addTo(map);
-                    map.fitBounds(polyline.getBounds().pad(0.1));
-                }
-            } catch (e) { console.error("Erreur carte:", e); }
-        }
-
-        function renderChart(elevationData) {
-            const chartContainer = document.getElementById('chart-container');
-            chartContainer.innerHTML = '<h2>Profil d\'altitude</h2><div class="chart-container"><canvas id="elevationChart"></canvas></div>';
-            const ctx = document.getElementById('elevationChart').getContext('2d');
-            const gradient = ctx.createLinearGradient(0, 0, 0, 250);
-            gradient.addColorStop(0, 'rgba(252, 76, 2, 0.4)');
-            gradient.addColorStop(1, 'rgba(252, 76, 2, 0)');
-            new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: elevationData.distance.map(d => (d / 1000).toFixed(1)),
-                    datasets: [{
-                        label: 'Altitude (m)', data: elevationData.altitude, borderColor: '#fc4c02',
-                        backgroundColor: gradient, borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3
-                    }]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    scales: { x: { title: { display: true, text: 'Distance (km)' } }, y: { title: { display: true, text: 'Altitude (m)' } } },
-                    plugins: { legend: { display: false } }
-                }
-            });
-        }
-
-        function decodePolyline(encoded) {
-            let len = encoded.length; let index = 0; let lat = 0; let lng = 0; let array = [];
-            while (index < len) {
-                let b; let shift = 0; let result = 0;
-                do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-                let dlat = ((result & 1) ? ~(result >> 1) : (result >> 1)); lat += dlat;
-                shift = 0; result = 0;
-                do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-                let dlng = ((result & 1) ? ~(result >> 1) : (result >> 1)); lng += dlng;
-                array.push([lat * 1e-5, lng * 1e-5]);
-            }
-            return array;
-        }
+        
+        // --- Les autres fonctions (map, chart, etc.) restent les mêmes ---
+        const API_URL = "https://projet-strava-api.onrender.com/api/strava";
+        const statusDiv = document.getElementById('status');
+        const stravaCode = new URLSearchParams(window.location.search).get('code');
+        function renderMap(p) { /* ... (code inchangé) ... */ }
+        function renderChart(d) { /* ... (code inchangé) ... */ }
+        function decodePolyline(e) { /* ... (code inchangé) ... */ }
+        function renderMap(encodedPolyline){const mapContainer=document.getElementById('map-container');mapContainer.innerHTML='<h2>Tracé de la dernière activité</h2><div id="map"></div>';try{const decodedPath=decodePolyline(encodedPolyline);if(decodedPath&&decodedPath.length>0){const map=L.map('map');L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap'}).addTo(map);const polyline=L.polyline(decodedPath,{color:'#fc4c02',weight:4}).addTo(map);map.fitBounds(polyline.getBounds().pad(0.1));}}catch(e){console.error("Erreur carte:",e);}}
+        function renderChart(elevationData){const chartContainer=document.getElementById('chart-container');chartContainer.innerHTML='<h2>Profil d\'altitude</h2><div class="chart-container"><canvas id="elevationChart"></canvas></div>';const ctx=document.getElementById('elevationChart').getContext('2d');const gradient=ctx.createLinearGradient(0,0,0,250);gradient.addColorStop(0,'rgba(252,76,2,0.4)');gradient.addColorStop(1,'rgba(252,76,2,0)');new Chart(ctx,{type:'line',data:{labels:elevationData.distance.map(d=>(d/1000).toFixed(1)),datasets:[{label:'Altitude (m)',data:elevationData.altitude,borderColor:'#fc4c02',backgroundColor:gradient,borderWidth:2,pointRadius:0,fill:true,tension:0.3}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:'Distance (km)'}},y:{title:{display:true,text:'Altitude (m)'}}},plugins:{legend:{display:false}}}});}
+        function decodePolyline(encoded){let len=encoded.length;let index=0;let lat=0;let lng=0;let array=[];while(index<len){let b;let shift=0;let result=0;do{b=encoded.charCodeAt(index++)-63;result|=(b&0x1f)<<shift;shift+=5;}while(b>=0x20);let dlat=((result&1)?~(result>>1):(result>>1));lat+=dlat;shift=0;result=0;do{b=encoded.charCodeAt(index++)-63;result|=(b&0x1f)<<shift;shift+=5;}while(b>=0x20);let dlng=((result&1)?~(result>>1):(result>>1));lng+=dlng;array.push([lat*1e-5,lng*1e-5]);}return array;}
     </script>
 </body>
 </html>
