@@ -1,90 +1,65 @@
-# Fichier : netlify/functions/functions.py
-
-import json
 import os
+import json
 from stravalib.client import Client
 
-# Le décorateur @builder a été retiré, il n'est pas nécessaire
 def handler(event, context):
-    # On récupère les identifiants depuis les variables d'environnement de Netlify
-    STRAVA_CLIENT_ID = os.environ.get("STRAVA_CLIENT_ID")
-    STRAVA_CLIENT_SECRET = os.environ.get("STRAVA_CLIENT_SECRET")
-    
-    # On récupère le code temporaire envoyé par le front-end
-    code = event['queryStringParameters'].get('code')
-
-    if not code:
-        return {
-            'statusCode': 400,
-            'body': json.dumps({'error': 'Code manquant'})
-        }
-
-    client = Client()
     try:
-        # Échange du code contre un token
-        token_response = client.exchange_code_for_token(
-            client_id=STRAVA_CLIENT_ID,
-            client_secret=STRAVA_CLIENT_SECRET,
-            code=code
-        )
-        access_token = token_response['access_token']
-        
-        # Utilisation du token pour récupérer les activités
-        authed_client = Client(access_token=access_token)
-        activities = list(authed_client.get_activities(limit=10))
-        
-        # On récupère les données du graphique pour la dernière activité
-        elevation_data = None
-        if activities:
-            latest_activity = activities[0]
-            streams = authed_client.get_activity_streams(
-                latest_activity.id, 
-                types=['distance', 'altitude']
-            )
-            if 'distance' in streams and 'altitude' in streams:
-                elevation_data = {
-                    'distance': streams['distance'].data,
-                    'altitude': streams['altitude'].data
-                }
+        # --- 1. Authentification Strava ---
+        # N'écrivez JAMAIS vos identifiants en dur dans le code.
+        # Utilisez les variables d'environnement de Netlify.
+        client_id = os.environ.get('STRAVA_CLIENT_ID')
+        client_secret = os.environ.get('STRAVA_CLIENT_SECRET')
+        refresh_token = os.environ.get('STRAVA_REFRESH_TOKEN')
 
-        # On prépare les données pour les renvoyer en format JSON
-        activities_json = []
+        if not all([client_id, client_secret, refresh_token]):
+            raise ValueError("Les variables d'environnement Strava ne sont pas définies.")
+
+        client = Client()
+
+        # Rafraîchir le token d'accès
+        refresh_response = client.refresh_access_token(
+            client_id=client_id,
+            client_secret=client_secret,
+            refresh_token=refresh_token
+        )
+        
+        # Mettre à jour le client avec le nouveau token
+        client.access_token = refresh_response['access_token']
+
+        # --- 2. Récupération des activités ---
+        activities = client.get_activities(limit=20) # Récupère les 20 dernières activités
+
+        # --- 3. Formatage des données pour le front-end ---
+        data_to_return = []
         for activity in activities:
-            # Conversion des objets Quanty en float pour la sérialisation JSON
-            distance_meters = float(activity.distance)
-            elevation_meters = float(activity.total_elevation_gain)
-            avg_speed_mps = float(activity.average_speed) if activity.average_speed else 0
-            max_speed_mps = float(activity.max_speed) if activity.max_speed else 0
-            
-            activities_json.append({
-                'name': activity.name,
-                'start_date_local': activity.start_date_local.strftime('%A %d %B %Y'),
-                'moving_time': str(activity.moving_time),
-                'distance': distance_meters,
-                'total_elevation_gain': elevation_meters,
-                'average_speed': avg_speed_mps,
-                'max_speed': max_speed_mps,
-                'has_heartrate': activity.has_heartrate,
-                'average_heartrate': activity.average_heartrate,
-                'max_heartrate': activity.max_heartrate,
-                'average_watts': activity.average_watts,
-                'max_watts': activity.max_watts,
-                'average_cadence': activity.average_cadence,
-                'calories': activity.calories,
-                'map': {'summary_polyline': activity.map.summary_polyline}
+            data_to_return.append({
+                "name": activity.name,
+                "distance": float(activity.distance),
+                "moving_time": str(activity.moving_time),
+                "elapsed_time": str(activity.elapsed_time),
+                "total_elevation_gain": float(activity.total_elevation_gain),
+                "type": activity.type,
+                "start_date_local": activity.start_date_local.isoformat()
             })
 
+        # --- 4. Construction de la réponse HTTP ---
+        # Le corps de la réponse ('body') doit être une chaîne JSON.
         return {
             'statusCode': 200,
-            'body': json.dumps({
-                "activities": activities_json,
-                "elevation_data": elevation_data
-            })
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*' # Permet les appels depuis n'importe quelle origine
+            },
+            'body': json.dumps(data_to_return)
         }
 
     except Exception as e:
+        # En cas d'erreur, retourner une réponse d'erreur claire
         return {
             'statusCode': 500,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+            },
             'body': json.dumps({'error': str(e)})
         }
-
