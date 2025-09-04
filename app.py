@@ -1,4 +1,4 @@
-# Fichier: app.py (Version stable qui fonctionnait)
+# Fichier: app.py (Version finale stable avec toutes les données)
 
 import os
 from flask import Flask, jsonify, request
@@ -14,7 +14,6 @@ def strava_handler():
     STRAVA_CLIENT_SECRET = os.environ.get("STRAVA_CLIENT_SECRET")
     
     code = request.args.get('code')
-
     if not code:
         return jsonify({'error': 'Code manquant'}), 400
 
@@ -40,7 +39,31 @@ def strava_handler():
                 'total_elevation_gain': float(getattr(activity, 'total_elevation_gain', 0))
             })
 
-        return jsonify({ "activities": activities_json })
+        latest_activity_map_polyline = None
+        elevation_data = None
+
+        if activities:
+            # Récupération du tracé pour la carte
+            if hasattr(activities[0], 'map') and activities[0].map and activities[0].map.summary_polyline:
+                latest_activity_map_polyline = activities[0].map.summary_polyline
+
+            # Récupération des données pour le graphique
+            latest_activity_id = getattr(activities[0], 'id', None)
+            if latest_activity_id:
+                streams = authed_client.get_activity_streams(
+                    latest_activity_id, types=['distance', 'altitude']
+                )
+                if streams and 'distance' in streams and 'altitude' in streams:
+                    elevation_data = {
+                        'distance': streams['distance'].data,
+                        'altitude': streams['altitude'].data
+                    }
+
+        return jsonify({
+            "activities": activities_json,
+            "latest_activity_map": latest_activity_map_polyline,
+            "elevation_data": elevation_data
+        })
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
