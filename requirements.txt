@@ -1,0 +1,5 @@
+stravalib
+requests
+Flask
+Flask-Cors
+gunicorn

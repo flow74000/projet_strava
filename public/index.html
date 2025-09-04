@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Connexion à Strava</title>
+    <style>
+        body { font-family: 'Inter', sans-serif; text-align: center; margin-top: 100px; background-color: #f3f4f6; }
+        .strava-connect { 
+            display: inline-block;
+            text-decoration: none; 
+            padding: 15px 30px; 
+            background-color: #fc4c02; 
+            color: white; 
+            border-radius: 8px; 
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        .strava-connect:hover { background-color: #e04402; }
+    </style>
+</head>
+<body>
+    <h1>Mes Données Strava</h1>
+    <p>Cliquez ci-dessous pour vous connecter et voir vos dernières activités.</p>
+    <a class="strava-connect" href="#" id="login-button">Se connecter avec Strava</a>
+
+    <script>
+        const STRAVA_CLIENT_ID = "157710";
+        const NETLIFY_SITE_URL = "[https://coachvelo.netlify.app](https://coachvelo.netlify.app)";
+        const REDIRECT_URI = `${NETLIFY_SITE_URL}/activities.html`;
+        
+        const authorizeUrl = `https://www.strava.com/oauth/authorize?client_id=${STRAVA_CLIENT_ID}&redirect_uri=${REDIRECT_URI}&response_type=code&scope=read,activity:read_all`;
+        
+        document.getElementById('login-button').href = authorizeUrl;
+    </script>
+</body>
+</html>
