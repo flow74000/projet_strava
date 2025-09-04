@@ -1,10 +1,11 @@
-# Fichier: app.py (Version avec débogage d'erreur forcé)
+# Fichier: app.py (Version finale, corrigée et nettoyée)
 
 import os
-import traceback # <-- AJOUT POUR LE DÉBOGAGE
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from stravalib.client import Client
+# Le module 'traceback' n'est plus nécessaire
+# import traceback 
 
 app = Flask(__name__)
 CORS(app)
@@ -13,7 +14,7 @@ CORS(app)
 def strava_handler():
     STRAVA_CLIENT_ID = os.environ.get("STRAVA_CLIENT_ID")
     STRAVA_CLIENT_SECRET = os.environ.get("STRAVA_CLIENT_SECRET")
-
+    
     code = request.args.get('code')
     if not code:
         return jsonify({'error': 'Code manquant'}), 400
@@ -25,11 +26,11 @@ def strava_handler():
             client_secret=STRAVA_CLIENT_SECRET,
             code=code
         )
-
+        
         access_token = token_response['access_token']
         authed_client = Client(access_token=access_token)
         activities = list(authed_client.get_activities(limit=10))
-
+        
         activities_json = []
         for activity in activities:
             activities_json.append({
@@ -45,11 +46,12 @@ def strava_handler():
                 'max_heartrate': float(getattr(activity, 'max_heartrate', 0)),
                 'average_watts': float(getattr(activity, 'average_watts', 0)),
                 'max_watts': float(getattr(activity, 'max_watts', 0)),
-                'map': {'summary_polyline': activity.map.summary_poline} if hasattr(activity, 'map') and activity.map.summary_poline else None
+                # --- CORRECTION DE LA FAUTE DE FRAPPE ICI ---
+                'map': {'summary_polyline': activity.map.summary_polyline} if hasattr(activity, 'map') and activity.map.summary_polyline else None
             })
-
+            
         latest_activity_map_polyline = activities_json[0]['map']['summary_polyline'] if activities and activities_json[0].get('map') else None
-
+        
         elevation_data = None
         if activities:
             latest_activity_id = getattr(activities[0], 'id', None)
@@ -67,9 +69,5 @@ def strava_handler():
         })
 
     except Exception as e:
-        # --- AJOUT CRUCIAL ICI ---
-        # On imprime l'erreur complète dans les logs de Render
-        print("!!! ERREUR DÉTECTÉE DANS LE BLOC TRY/EXCEPT !!!")
-        print(traceback.format_exc())
-        # --- FIN DE L'AJOUT ---
+        # Les lignes de débogage ont été retirées
         return jsonify({'error': str(e)}), 500
