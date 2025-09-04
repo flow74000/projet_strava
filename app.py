@@ -1,4 +1,4 @@
-# Fichier: app.py (Version avec carte + graphique)
+# Fichier: app.py (Version stable avec carte + graphique)
 
 import os
 from flask import Flask, jsonify, request
@@ -41,32 +41,29 @@ def strava_handler():
             })
         
         latest_activity_map_polyline = None
-        elevation_data = None # On initialise la variable pour le graphique
+        elevation_data = None
 
         if activities:
-            # On récupère le tracé pour la carte
+            # Récupération du tracé pour la carte
             if activities[0].map and activities[0].map.summary_polyline:
                 latest_activity_map_polyline = activities[0].map.summary_polyline
 
-            # --- AJOUT POUR LE GRAPHIQUE ---
-            # On récupère les "streams" (données détaillées) de la dernière activité
+            # Récupération des données pour le graphique
             latest_activity_id = activities[0].id
             streams = authed_client.get_activity_streams(
                 latest_activity_id, 
                 types=['distance', 'altitude']
             )
-            # On s'assure que les deux flux de données sont présents
             if streams and 'distance' in streams and 'altitude' in streams:
                 elevation_data = {
                     'distance': streams['distance'].data,
                     'altitude': streams['altitude'].data
                 }
-            # --- FIN DE L'AJOUT ---
 
         return jsonify({
             "activities": activities_json,
             "latest_activity_map": latest_activity_map_polyline,
-            "elevation_data": elevation_data # Nouvelle donnée
+            "elevation_data": elevation_data
         })
 
     except Exception as e:
