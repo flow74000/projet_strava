@@ -22,6 +22,17 @@
         .goal-details h3 { margin: 0; font-size: 1rem; color: var(--gray-500); font-weight: 500; text-transform: uppercase; }
         .goal-details p { margin: 4px 0 0; font-size: 1.2rem; font-weight: 600; }
         .goal-details .sub { font-size: 0.9rem; color: var(--gray-500); }
+        /* NOUVEAUX STYLES POUR LA SECTION "CONDITION PHYSIQUE" */
+        .fitness-section { display: grid; grid-template-columns: 1fr; gap: 24px; margin-bottom: 24px; }
+        @media (min-width: 1024px) { /* Pour les grands écrans, placez le graphique à côté */
+            .fitness-section { grid-template-columns: 2fr 3fr; }
+        }
+        .fitness-summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 24px; }
+        .summary-card { padding: 20px; text-align: center; }
+        .summary-card h3 { font-size: 0.875rem; font-weight: 500; color: var(--gray-500); text-transform: uppercase; margin-bottom: 8px; }
+        .summary-card p { font-size: 2.25rem; font-weight: 800; color: var(--gray-800); margin: 0; }
+        /* Fin des nouveaux styles */
+
         .latest-activity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; align-items: flex-start; }
         #map { height: 400px; width: 100%; border-radius: 8px; background-color: var(--gray-200); }
         .summary-panel .date { font-size: 1rem; color: var(--gray-500); margin-bottom: 4px; }
@@ -41,7 +52,15 @@
         <div id="status-container" class="card" style="text-align: center; font-size: 1.2em; font-weight: bold; padding: 40px;">Chargement des données...</div>
         <div id="content-wrapper" style="display: none;">
             <div class="dashboard-header"><h1 >Mon Tableau de Bord</h1><div class="goals-container" id="goals-container"></div></div>
-            <div id="fitness-summary-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"></div>
+            
+            <div class="card">
+                <h2>Condition Physique</h2>
+                <div class="fitness-section">
+                    <div id="fitness-summary-cards" class="fitness-summary-cards"></div>
+                    <div id="form-chart-container" class="card" style="padding: 16px;"> <div class="chart-container"><canvas id="formChart"></canvas></div>
+                    </div>
+                </div>
+            </div>
             <div class="card">
                 <div id="latest-activity-summary"></div>
                 <div class="latest-activity-grid">
@@ -50,7 +69,6 @@
                 </div>
                 <div id="elevation-chart-card" class="card" style="display: none;"><h2>Profil d'altitude</h2><div class="chart-container"><canvas id="elevationChart"></canvas></div></div>
             </div>
-            <div class="card" id="form-chart-card" style="display: none;"><h2>Évolution de la Forme (90 jours)</h2><div class="chart-container"><canvas id="formChart"></canvas></div></div>
             <div class="card"><h2>Historique</h2><table class="activity-table"><tbody id="history-table-body"></tbody></table></div>
         </div>
     </div>
@@ -80,12 +98,18 @@
             renderGoals(data.goals);
             renderFitnessSummary(data.fitness_summary);
             renderLatestActivity(data.activities, data.latest_activity_map, data.elevation_data);
-            if (data.form_chart_data) { document.getElementById('form-chart-card').style.display = 'block'; renderFormChart(data.form_chart_data); }
+            
+            // Le graphique de forme est maintenant rendu dans sa nouvelle section
+            if (data.form_chart_data) {
+                renderFormChart(data.form_chart_data);
+            }
+            
             renderHistory(data.activities);
             lucide.createIcons();
         }
         function renderGoals(goals) { if (!goals) return; const container = document.getElementById('goals-container'); container.innerHTML = ''; if (goals.weekly) { container.innerHTML += createGoalStat('weeklyGoal', 'Objectif Semaine', goals.weekly); } if (goals.yearly) { container.innerHTML += createGoalStat('yearlyGoal', 'Objectif Annuel', goals.yearly); } if (goals.weekly) renderGoalChart('weeklyGoalChart', goals.weekly); if (goals.yearly) renderGoalChart('yearlyGoalChart', goals.yearly); }
-        function renderFitnessSummary(summary) { const container = document.getElementById('fitness-summary-container'); if (!summary) return; const getFormClass = (form) => { if (form==null) return ''; if (form > 5) return 'form-blue'; if (form > -10) return 'form-green'; return 'form-red'; }; container.innerHTML = `${createSummaryCard('trending-up', 'Fitness (CTL)', summary.fitness)}${createSummaryCard('flame', 'Fatigue (ATL)', summary.fatigue)}${createSummaryCard('shield-check', 'Forme (TSB)', summary.form, `font-bold ${getFormClass(summary.form)}`)}${createSummaryCard('lungs', 'VO2max Estimée', summary.vo2max)}`;}
+        // La fonction renderFitnessSummary est légèrement modifiée pour cibler le nouveau conteneur
+        function renderFitnessSummary(summary) { const container = document.getElementById('fitness-summary-cards'); if (!summary) return; const getFormClass = (form) => { if (form==null) return ''; if (form > 5) return 'form-blue'; if (form > -10) return 'form-green'; return 'form-red'; }; container.innerHTML = `${createSummaryCard('trending-up', 'Fitness (CTL)', summary.fitness)}${createSummaryCard('flame', 'Fatigue (ATL)', summary.fatigue)}${createSummaryCard('shield-check', 'Forme (TSB)', summary.form, `font-bold ${getFormClass(summary.form)}`)}${createSummaryCard('lungs', 'VO2max Estimée', summary.vo2max)}`;}
         function renderLatestActivity(activities, mapData, chartData) { const summaryTitle = document.getElementById('latest-activity-summary'); const detailsContainer = document.getElementById('summary-details-container'); if (!activities || activities.length === 0) return; const latest = activities[0]; summaryTitle.innerHTML = `<h2>Dernière Activité</h2>`; detailsContainer.innerHTML = `<p class="date">${formatDate(latest.start_date_local)}</p><h3>${latest.name}</h3>${createStatDetail('ruler','Distance',`${(latest.distance/1000).toFixed(2)}`,'km')}${createStatDetail('timer','Durée',formatMovingTime(latest.moving_time))}${createStatDetail('trending-up','Dénivelé',`${latest.total_elevation_gain.toFixed(0)}`,'m')}`; if (mapData) renderMap(mapData); if (chartData) { document.getElementById('elevation-chart-card').style.display = 'block'; renderChart(chartData, 'elevationChart'); } }
         function renderHistory(activities) { const historyTableBody = document.getElementById('history-table-body'); if (!activities || !activities.length) return; historyTableBody.innerHTML = ''; activities.forEach(activity => { const row = document.createElement('tr'); row.innerHTML = `<td class="strava-orange">${activity.name}</td><td>${(activity.distance / 1000).toFixed(2)} km</td><td>${new Date(activity.start_date_local).toLocaleDateString('fr-FR')}</td>`; historyTableBody.appendChild(row); }); }
         function createSummaryCard(icon, title, value, valueClass = '') { return `<div class="card summary-card"><h3 class="flex items-center justify-center gap-2"><i data-lucide="${icon}" class="w-4 h-4 text-gray-400"></i>${title}</h3><p class="${valueClass}">${value ?? '-'}</p></div>`; }
@@ -95,7 +119,7 @@
         function formatDate(d) { return new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
         function formatMovingTime(timeValue) { const parts=timeValue.split(':').map(Number);if(parts.length===3){const[h,m,s]=parts;if(h>0)return`${h}h ${m}min`;return`${m}min ${s}s`;}const totalSeconds=parseInt(timeValue,10);if(isNaN(totalSeconds))return timeValue;const h=Math.floor(totalSeconds/3600);const m=Math.floor((totalSeconds%3600)/60);const s=totalSeconds%60;if(h>0)return`${h}h ${m}min`;return`${m}min ${s}s`;}
         function renderMap(p){const c=document.getElementById("map-container");c.innerHTML='<div id="map"></div>';try{const d=decodePolyline(p);if(d&&d.length>0){const m=L.map("map");L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:'&copy; OSM'}).addTo(m);const l=L.polyline(d,{color:"#fc5200",weight:4}).addTo(m);m.fitBounds(l.getBounds().pad(.1))}}catch(e){console.error("Erreur carte:",e)}}
-        function renderChart(d, canvasId){const c=document.getElementById(canvasId).parentElement;const x=document.getElementById(canvasId).getContext("2d");const g=x.createLinearGradient(0,0,0,250);g.addColorStop(0,"rgba(252,76,2,0.4)"),g.addColorStop(1,"rgba(252,76,2,0)");new Chart(x,{type:"line",data:{labels:d.distance.map(v=>(v/1000).toFixed(1)),datasets:[{label:"Altitude (m)",data:d.altitude,borderColor:"#fc5200",backgroundColor:g,borderWidth:2,pointRadius:0,fill:!0,tension:.3}]},options:{responsive:!0,maintainAspectRatio:!1,scales:{x:{title:{display:true,text:"Distance (km)"}},y:{title:{display:true,text:"Altitude (m)"}}},plugins:{legend:{display:!1}}}});}
+        function renderChart(d, canvasId){const x=document.getElementById(canvasId).getContext("2d");const g=x.createLinearGradient(0,0,0,250);g.addColorStop(0,"rgba(252,76,2,0.4)"),g.addColorStop(1,"rgba(252,76,2,0)");new Chart(x,{type:"line",data:{labels:d.distance.map(v=>(v/1000).toFixed(1)),datasets:[{label:"Altitude (m)",data:d.altitude,borderColor:"#fc5200",backgroundColor:g,borderWidth:2,pointRadius:0,fill:!0,tension:.3}]},options:{responsive:!0,maintainAspectRatio:!1,scales:{x:{title:{display:true,text:"Distance (km)"}},y:{title:{display:true,text:"Altitude (m)"}}},plugins:{legend:{display:!1}}}});}
         function renderFormChart(data) { const ctx = document.getElementById('formChart').getContext('2d'); const labels = data.map(d => new Date(d.id)); const tsbData = data.map(d => (d.ctl != null && d.atl != null) ? d.ctl - d.atl : null); const getFormColor = (value) => { if (value === null || isNaN(value)) return 'rgba(107, 114, 128, 0.5)'; if (value > 5) return '#3b82f6'; if (value > -10) return '#22c55e'; if (value > -25) return '#6b7280'; return '#ef4444'; }; new Chart(ctx, { type: 'line', data: { labels: labels, datasets: [{ label: 'Forme (TSB)', data: tsbData, borderWidth: 2.5, tension: 0.4, pointRadius: 0, segment: { borderColor: ctx => getFormColor(ctx.p1.raw) } }] }, options: { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'time', time: { unit: 'week' } }, y: { title: { display: true, text: 'Forme (TSB)' } } }, plugins: { legend: { display: false }, annotation: { annotations: { highRisk: { type: 'box', yMin: -Infinity, yMax: -25, backgroundColor: 'rgba(239, 68, 68, 0.05)', borderColor: 'transparent' }, greyZone: { type: 'box', yMin: -25, yMax: -10, backgroundColor: 'rgba(107, 114, 128, 0.05)', borderColor: 'transparent' }, optimal: { type: 'box', yMin: -10, yMax: 5, backgroundColor: 'rgba(34, 197, 94, 0.05)', borderColor: 'transparent' }, fresh: { type: 'box', yMin: 5, yMax: Infinity, backgroundColor: 'rgba(59, 130, 246, 0.05)', borderColor: 'transparent' } } } } } }); }
         function decodePolyline(e){let l=e.length,i=0,a=0,n=0,r=[];while(i<l){let t,h=0,s=0;do{t=e.charCodeAt(i++)-63,s|=(t&31)<<h,h+=5}while(t>=32);let o=s&1?~(s>>1):s>>1;a+=o,h=0,s=0;do{t=e.charCodeAt(i++)-63,s|=(t&31)<<h,h+=5}while(t>=32);let d=s&1?~(s>>1):s>>1;n+=d,r.push([a*1e-5,n*1e-5])}return r}
     </script>
