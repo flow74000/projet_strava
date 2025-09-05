@@ -1,4 +1,4 @@
-# Fichier: app.py (Version finale complète)
+# Fichier: app.py (Version finale, corrigée et nettoyée)
 
 import os
 from datetime import date, timedelta, datetime
@@ -27,11 +27,16 @@ def strava_handler():
         )
         
         access_token = token_response['access_token']
-        athlete_id = token_response['athlete']['id']
         authed_client = Client(access_token=access_token)
+        
+        # --- CORRECTION FINALE ICI ---
+        # On récupère l'athlète dans un deuxième temps pour plus de fiabilité
+        athlete = authed_client.get_athlete()
+        athlete_id = athlete.id
+        # --- FIN DE LA CORRECTION ---
+        
         activities = list(authed_client.get_activities(limit=50))
         
-        # Calcul du total hebdomadaire
         today = date.today()
         start_of_week = today - timedelta(days=today.weekday())
         weekly_distance = 0
@@ -39,14 +44,13 @@ def strava_handler():
             activity_date = activity.start_date_local.date()
             if activity_date >= start_of_week:
                 weekly_distance += float(getattr(activity, 'distance', 0))
+        
         weekly_summary = {"current": weekly_distance / 1000, "goal": 200}
 
-        # Calcul du total annuel
         stats = authed_client.get_athlete_stats(athlete_id)
         ytd_distance = float(stats.ytd_ride_totals.distance)
         yearly_summary = {"current": ytd_distance / 1000, "goal": 8000}
 
-        # Formatage des 10 dernières activités pour l'affichage
         activities_json = []
         for activity in activities[:10]:
             activities_json.append({
@@ -75,7 +79,6 @@ def strava_handler():
         })
 
     except Exception as e:
-        # En cas d'erreur, on la renvoie pour le débogage
         import traceback
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
