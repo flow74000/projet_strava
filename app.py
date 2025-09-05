@@ -1,6 +1,7 @@
-# Fichier: app.py (Version stable avec résumé, carte et graphique)
+# Fichier: app.py (Version avec calcul des objectifs)
 
 import os
+from datetime import date, timedelta, datetime
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from stravalib.client import Client
@@ -26,41 +27,56 @@ def strava_handler():
         )
         
         access_token = token_response['access_token']
+        athlete_id = token_response['athlete']['id']
         authed_client = Client(access_token=access_token)
-        activities = list(authed_client.get_activities(limit=10))
         
-        activities_json = []
+        # On augmente la limite pour le calcul de la semaine
+        activities = list(authed_client.get_activities(limit=50))
+        
+        # --- Calcul du total hebdomadaire ---
+        today = date.today()
+        start_of_week = today - timedelta(days=today.weekday())
+        weekly_distance = 0
         for activity in activities:
+            activity_date = datetime.fromisoformat(activity.start_date_local.isoformat()).date()
+            if activity_date >= start_of_week:
+                weekly_distance += float(getattr(activity, 'distance', 0))
+        
+        weekly_summary = {"current": weekly_distance / 1000, "goal": 200}
+
+        # --- Calcul du total annuel ---
+        stats = authed_client.get_athlete_stats(athlete_id)
+        ytd_distance = float(stats.ytd_ride_totals.distance)
+        yearly_summary = {"current": ytd_distance / 1000, "goal": 8000}
+
+        # Le reste du code pour les activités, carte, etc. est inchangé
+        activities_json = []
+        for activity in activities[:10]:
             activities_json.append({
-                'name': activity.name,
-                'start_date_local': activity.start_date_local.isoformat(),
+                'name': activity.name, 'start_date_local': activity.start_date_local.isoformat(),
                 'moving_time': str(getattr(activity, 'moving_time', '0')),
                 'distance': float(getattr(activity, 'distance', 0)),
                 'total_elevation_gain': float(getattr(activity, 'total_elevation_gain', 0))
             })
-
-        latest_activity_map_polyline = None
-        elevation_data = None
-
+        
+        latest_activity_map_polyline, elevation_data = None, None
         if activities:
-            if hasattr(activities[0], 'map') and activities[0].map and activities[0].map.summary_polyline:
+            if hasattr(activities[0], 'map') and activities[0].map.summary_polyline:
                 latest_activity_map_polyline = activities[0].map.summary_polyline
-
             latest_activity_id = getattr(activities[0], 'id', None)
             if latest_activity_id:
-                streams = authed_client.get_activity_streams(
-                    latest_activity_id, types=['distance', 'altitude']
-                )
+                streams = authed_client.get_activity_streams(latest_activity_id, types=['distance', 'altitude'])
                 if streams and 'distance' in streams and 'altitude' in streams:
-                    elevation_data = {
-                        'distance': streams['distance'].data,
-                        'altitude': streams['altitude'].data
-                    }
+                    elevation_data = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
 
         return jsonify({
             "activities": activities_json,
             "latest_activity_map": latest_activity_map_polyline,
-            "elevation_data": elevation_data
+            "elevation_data": elevation_data,
+            "goals": {
+                "weekly": weekly_summary,
+                "yearly": yearly_summary
+            }
         })
 
     except Exception as e:
