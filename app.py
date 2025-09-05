@@ -1,4 +1,4 @@
-# Fichier: app.py (Version avec calcul de l'objectif hebdomadaire)
+# Fichier: app.py (Version avec objectifs hebdo + annuel)
 
 import os
 from datetime import date, timedelta, datetime
@@ -27,11 +27,13 @@ def strava_handler():
         )
         
         access_token = token_response['access_token']
-        authed_client = Client(access_token=access_token)
-        # On augmente la limite pour être sûr d'avoir toutes les activités de la semaine
-        activities = list(authed_client.get_activities(limit=50)) 
+        # On récupère l'ID de l'athlète pour les statistiques annuelles
+        athlete_id = token_response['athlete']['id']
         
-        # --- AJOUT : Calcul du total hebdomadaire ---
+        authed_client = Client(access_token=access_token)
+        activities = list(authed_client.get_activities(limit=50))
+        
+        # --- Calcul du total hebdomadaire (inchangé) ---
         today = date.today()
         start_of_week = today - timedelta(days=today.weekday())
         weekly_distance = 0
@@ -40,15 +42,21 @@ def strava_handler():
             if activity_date >= start_of_week:
                 weekly_distance += float(getattr(activity, 'distance', 0))
         
-        weekly_summary = {
-            "current": weekly_distance / 1000, # en km
-            "goal": 200
+        weekly_summary = { "current": weekly_distance / 1000, "goal": 200 }
+
+        # --- AJOUT : Calcul du total annuel ---
+        stats = authed_client.get_athlete_stats(athlete_id)
+        ytd_distance = float(stats.ytd_ride_totals.distance)
+        
+        yearly_summary = {
+            "current": ytd_distance / 1000, # en km
+            "goal": 8000
         }
         # --- FIN DE L'AJOUT ---
-        
+
         # Le reste du code est inchangé
         activities_json = []
-        for activity in activities[:10]: # On ne renvoie que les 10 dernières au frontend
+        for activity in activities[:10]:
             activities_json.append({
                 'name': activity.name,
                 'start_date_local': activity.start_date_local.isoformat(),
@@ -57,11 +65,9 @@ def strava_handler():
                 'total_elevation_gain': float(getattr(activity, 'total_elevation_gain', 0))
             })
         
-        # ... (code pour la carte et le graphique d'élévation inchangé)
-        latest_activity_map_polyline = None
-        elevation_data = None
+        latest_activity_map_polyline, elevation_data = None, None
         if activities:
-            if hasattr(activities[0], 'map') and activities[0].map and activities[0].map.summary_polyline:
+            if hasattr(activities[0], 'map') and activities[0].map.summary_polyline:
                 latest_activity_map_polyline = activities[0].map.summary_polyline
             latest_activity_id = getattr(activities[0], 'id', None)
             if latest_activity_id:
@@ -73,7 +79,8 @@ def strava_handler():
             "activities": activities_json,
             "latest_activity_map": latest_activity_map_polyline,
             "elevation_data": elevation_data,
-            "weekly_summary": weekly_summary # Nouvelle donnée
+            "weekly_summary": weekly_summary,
+            "yearly_summary": yearly_summary # Nouvelle donnée
         })
 
     except Exception as e:

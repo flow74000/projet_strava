@@ -7,29 +7,39 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f4; color: #333; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        .container { width: 100%; max-width: 800px; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .container { width: 100%; max-width: 800px; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
         h1, h2 { color: #fc4c02; border-bottom: 2px solid #eee; padding-bottom: 10px; }
         #status { font-size: 1.2em; font-weight: bold; text-align: center; padding: 40px; }
         .activity { border-bottom: 1px solid #eee; padding: 15px 5px; margin-bottom: 10px; }
         #map { height: 400px; width: 100%; border-radius: 8px; margin-top: 20px; background-color: #eee; }
         .chart-container { position: relative; height: 250px; width: 100%; margin-top: 24px; }
-        #latest-activity-summary { margin-bottom: 30px; }
+        
+        /* NOUVELLE GRILLE POUR LES OBJECTIFS */
+        #goals-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; }
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
         .stat { background-color: #f9f9f9; padding: 20px; border-radius: 8px; text-align: center; border: 1px solid #eee; }
         .stat h3 { margin: 0 0 8px 0; font-size: 0.9em; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
         .stat p { margin: 0; font-size: 1.8em; font-weight: 600; color: #333; }
         .stat .unit { font-size: 0.6em; }
-        /* --- AJOUT : Style pour le graphique objectif --- */
         .goal-chart-container { position: relative; height: 180px; }
     </style>
 </head>
 <body>
+
     <div class="container">
-        <h1>Mes Activités Strava</h1>
+        <h1>Tableau de bord Strava</h1>
         <div id="status">Chargement des données...</div>
+        
+        <div id="goals-container" style="display: none;"></div>
+    </div>
+    
+    <div class="container" id="latest-activity-container" style="display: none;">
         <div id="latest-activity-summary"></div>
         <div id="map-container"></div>
         <div id="chart-container"></div>
+    </div>
+    
+    <div class="container" id="history-container" style="display: none;">
         <div id="activities-container"></div>
     </div>
 
@@ -38,11 +48,7 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const API_URL = "https://projet-strava-api.onrender.com/api/strava";
-            const statusDiv = document.getElementById('status');
-            const stravaCode = new URLSearchParams(window.location.search).get('code');
-
-            if (!stravaCode) { /* ... (gestion erreur identique) ... */ return; }
+            // ... (début du script fetch identique) ...
 
             fetch(`${API_URL}?code=${stravaCode}`)
                 .then(response => response.json().then(data => ({ ok: response.ok, data })))
@@ -50,92 +56,93 @@
                     if (!ok) throw new Error(data.error || 'Erreur inconnue');
                     statusDiv.style.display = 'none';
                     
-                    displayLatestSummary(data.activities, data.weekly_summary); // On passe les nouvelles données
-                    displayActivitiesList(data.activities);
-                    if (data.latest_activity_map) renderMap(data.latest_activity_map);
-                    if (data.elevation_data) renderChart(data.elevation_data);
+                    // On affiche les différentes sections
+                    renderGoals(data.weekly_summary, data.yearly_summary);
+                    renderLatestActivity(data.activities, data.latest_activity_map, data.elevation_data);
+                    renderHistory(data.activities);
                 })
                 .catch(error => { /* ... (gestion erreur identique) ... */ });
         });
+        
+        // NOUVELLE FONCTION POUR AFFICHER LES OBJECTIFS
+        function renderGoals(weekly, yearly) {
+            const container = document.getElementById('goals-container');
+            if (!weekly && !yearly) return;
 
-        // --- MODIFICATION : La fonction reçoit maintenant les données de l'objectif ---
-        function displayLatestSummary(activities, weeklySummary) {
+            container.style.display = 'grid';
+            container.innerHTML = `
+                ${weekly ? `
+                <div class="stat">
+                    <h3>Objectif Semaine</h3>
+                    <div class="goal-chart-container"><canvas id="weeklyGoalChart"></canvas></div>
+                </div>` : ''}
+                ${yearly ? `
+                <div class="stat">
+                    <h3>Objectif Annuel</h3>
+                    <div class="goal-chart-container"><canvas id="yearlyGoalChart"></canvas></div>
+                </div>` : ''}
+            `;
+            
+            if (weekly) renderGoalChart('weeklyGoalChart', weekly, `${weekly.current.toFixed(0)} / ${weekly.goal} km`);
+            if (yearly) renderGoalChart('yearlyGoalChart', yearly, `${yearly.current.toFixed(0)} / ${yearly.goal} km`);
+        }
+        
+        // NOUVELLE FONCTION DÉDIÉE À LA DERNIÈRE ACTIVITÉ
+        function renderLatestActivity(activities, mapData, chartData) {
+            const container = document.getElementById('latest-activity-container');
             const summaryContainer = document.getElementById('latest-activity-summary');
             if (!activities || activities.length === 0) return;
+            
+            container.style.display = 'block';
             const latest = activities[0];
             const distanceKm = (latest.distance / 1000).toFixed(2);
 
-            // On ajoute le canvas pour le nouveau graphique
             summaryContainer.innerHTML = `
                 <h2>Dernière activité : ${latest.name}</h2>
                 <div class="stats-grid">
-                    <div class="stat">
-                        <h3>Distance</h3>
-                        <p>${distanceKm} <span class="unit">km</span></p>
-                    </div>
-                    <div class="stat">
-                        <h3>Durée</h3>
-                        <p>${latest.moving_time}</p>
-                    </div>
-                    <div class="stat">
-                         <h3>Objectif Semaine</h3>
-                         <div class="goal-chart-container">
-                            <canvas id="weeklyGoalChart"></canvas>
-                         </div>
-                    </div>
+                    <div class="stat"><h3>Distance</h3><p>${distanceKm} <span class="unit">km</span></p></div>
+                    <div class="stat"><h3>Durée</h3><p>${latest.moving_time}</p></div>
                 </div>
             `;
-            // Une fois le HTML inséré, on peut dessiner le graphique
-            if (weeklySummary) {
-                renderGoalChart(weeklySummary);
-            }
+
+            if (mapData) renderMap(mapData);
+            if (chartData) renderChart(chartData);
         }
 
-        // --- AJOUT : Nouvelle fonction pour le graphique objectif ---
-        function renderGoalChart(summary) {
-            const ctx = document.getElementById('weeklyGoalChart').getContext('2d');
+        // NOUVELLE FONCTION DÉDIÉE À L'HISTORIQUE
+        function renderHistory(activities) {
+            const container = document.getElementById('history-container');
+            const listContainer = document.getElementById('activities-container');
+            if (!activities || activities.length === 0) return;
+
+            container.style.display = 'block';
+            listContainer.innerHTML = '<h2>Historique des activités</h2>'; 
+            activities.forEach(activity => { /* ... (code identique à la version précédente) ... */ });
+        }
+
+        // GRAPHIQUE D'OBJECTIF GÉNÉRIQUE
+        function renderGoalChart(canvasId, summary, titleText) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
             const current = summary.current;
             const goal = summary.goal;
-            const remaining = Math.max(0, goal - current); // Pour ne pas avoir de valeur négative
-            const percentage = goal > 0 ? ((current / goal) * 100).toFixed(0) : 0;
+            const remaining = Math.max(0, goal - current);
 
             new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Réalisé', 'Restant'],
-                    datasets: [{
-                        data: [current, remaining],
-                        backgroundColor: ['#fc4c02', '#e5e7eb'],
-                        borderColor: ['#ffffff'],
-                        borderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    cutout: '70%', // Pour l'effet "donut"
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: { enabled: false },
-                        title: {
-                            display: true,
-                            text: `${percentage}%`, // Affiche le pourcentage au centre
-                            position: 'bottom',
-                            font: { size: 24, weight: 'bold' },
-                            color: '#333',
-                            padding: { top: -40 } // Ajustement vertical
-                        }
+                type: 'doughnut', data: { datasets: [{ data: [current, remaining], backgroundColor: ['#fc4c02', '#e5e7eb'], borderWidth: 2 }] },
+                options: { responsive: true, maintainAspectRatio: false, cutout: '70%',
+                    plugins: { legend: { display: false }, tooltip: { enabled: false },
+                        title: { display: true, text: titleText, position: 'bottom', font: { size: 18, weight: 'bold' }, color: '#333', padding: { top: -40 } }
                     }
                 }
             });
         }
         
-        // --- Les autres fonctions (displayActivitiesList, renderMap, etc.) restent inchangées ---
-        function displayActivitiesList(a) {/* ... */}
-        function renderMap(p) { /* ... */ }
-        function renderChart(d) { /* ... */ }
-        function decodePolyline(e) { /* ... */ }
-        // (Le code complet des autres fonctions est omis ici pour la clarté, mais doit être conservé)
+        // Le reste du JS (fetch, helpers, etc.) doit être conservé
+        const API_URL = "https://projet-strava-api.onrender.com/api/strava"; const statusDiv = document.getElementById('status'); const stravaCode = new URLSearchParams(window.location.search).get('code');
+        function renderMap(p){const c=document.getElementById('map-container');c.innerHTML='<h2>Tracé</h2><div id="map"></div>';try{const d=decodePolyline(p);if(d&&d.length>0){const m=L.map('map');L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OSM'}).addTo(m);const l=L.polyline(d,{color:'#fc4c02',weight:4}).addTo(m);m.fitBounds(l.getBounds().pad(0.1));}}catch(e){console.error("Erreur carte:",e);}}
+        function renderChart(d){const c=document.getElementById('chart-container');c.innerHTML='<h2>Profil d\'altitude</h2><div class="chart-container"><canvas id="elevationChart"></canvas></div>';const x=document.getElementById('elevationChart').getContext('2d');const g=x.createLinearGradient(0,0,0,250);g.addColorStop(0,'rgba(252,76,2,0.4)');g.addColorStop(1,'rgba(252,76,2,0)');new Chart(x,{type:'line',data:{labels:d.distance.map(v=>(v/1000).toFixed(1)),datasets:[{label:'Altitude (m)',data:d.altitude,borderColor:'#fc4c02',backgroundColor:g,borderWidth:2,pointRadius:0,fill:true,tension:0.3}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:'Distance (km)'}},y:{title:{display:true,text:'Altitude (m)'}}},plugins:{legend:{display:false}}}});}
+        function decodePolyline(e){let l=e.length;let i=0;let a=0;let n=0;let r=[];while(i<l){let t;let h=0;let s=0;do{t=e.charCodeAt(i++)-63;s|=(t&31)<<h;h+=5;}while(t>=32);let o=((s&1)?~(s>>1):(s>>1));a+=o;h=0;s=0;do{t=e.charCodeAt(i++)-63;s|=(t&31)<<h;h+=5;}while(t>=32);let d=((s&1)?~(s>>1):(s>>1));n+=d;r.push([a*1e-5,n*1e-5]);}return r;}
+        function renderHistory(activities){const container=document.getElementById('history-container');const listContainer=document.getElementById('activities-container');if(!activities||activities.length===0)return;container.style.display='block';listContainer.innerHTML='<h2>Historique des activités</h2>';activities.forEach(activity=>{const distanceKm=(activity.distance/1000).toFixed(2);const elevation=activity.total_elevation_gain.toFixed(0);const date=new Date(activity.start_date_local).toLocaleDateString('fr-FR');const activityElement=document.createElement('div');activityElement.className='activity';activityElement.innerHTML=`<h3>${activity.name}</h3><p><strong>${date}</strong> - ${distanceKm} km - ${elevation} m D+</p>`;listContainer.appendChild(activityElement);});}
     </script>
 </body>
 </html>
