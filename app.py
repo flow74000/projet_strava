@@ -1,11 +1,11 @@
-# Fichier: app.py (Version avec débogage d'erreur forcé)
+# Fichier: app.py (Version finale corrigée)
 
 import os
-import traceback # <-- AJOUT POUR LE DÉBOGAGE
 from datetime import date, timedelta, datetime
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from stravalib.client import Client
+# Le module 'traceback' n'est plus nécessaire
 
 app = Flask(__name__)
 CORS(app)
@@ -28,8 +28,13 @@ def strava_handler():
         )
         
         access_token = token_response['access_token']
-        athlete_id = token_response['athlete']['id']
         authed_client = Client(access_token=access_token)
+        
+        # --- CORRECTION ICI ---
+        # On récupère l'athlète dans un deuxième temps pour plus de fiabilité
+        athlete = authed_client.get_athlete()
+        athlete_id = athlete.id
+        # --- FIN DE LA CORRECTION ---
         
         activities = list(authed_client.get_activities(limit=50))
         
@@ -37,7 +42,6 @@ def strava_handler():
         start_of_week = today - timedelta(days=today.weekday())
         weekly_distance = 0
         for activity in activities:
-            # La date de l'activité est un objet datetime, on extrait juste la date
             activity_date = activity.start_date_local.date()
             if activity_date >= start_of_week:
                 weekly_distance += float(getattr(activity, 'distance', 0))
@@ -75,9 +79,4 @@ def strava_handler():
         })
 
     except Exception as e:
-        # --- AJOUT CRUCIAL ICI ---
-        # On imprime l'erreur complète dans les logs de Render
-        print("!!! ERREUR DÉTECTÉE DANS LE BLOC TRY/EXCEPT !!!")
-        print(traceback.format_exc())
-        # --- FIN DE L'AJOUT ---
         return jsonify({'error': str(e)}), 500
