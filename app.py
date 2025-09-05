@@ -1,6 +1,7 @@
-# Fichier: app.py (Version avec calcul des objectifs)
+# Fichier: app.py (Version avec débogage d'erreur forcé)
 
 import os
+import traceback # <-- AJOUT POUR LE DÉBOGAGE
 from datetime import date, timedelta, datetime
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -30,26 +31,23 @@ def strava_handler():
         athlete_id = token_response['athlete']['id']
         authed_client = Client(access_token=access_token)
         
-        # On augmente la limite pour le calcul de la semaine
         activities = list(authed_client.get_activities(limit=50))
         
-        # --- Calcul du total hebdomadaire ---
         today = date.today()
         start_of_week = today - timedelta(days=today.weekday())
         weekly_distance = 0
         for activity in activities:
-            activity_date = datetime.fromisoformat(activity.start_date_local.isoformat()).date()
+            # La date de l'activité est un objet datetime, on extrait juste la date
+            activity_date = activity.start_date_local.date()
             if activity_date >= start_of_week:
                 weekly_distance += float(getattr(activity, 'distance', 0))
         
         weekly_summary = {"current": weekly_distance / 1000, "goal": 200}
 
-        # --- Calcul du total annuel ---
         stats = authed_client.get_athlete_stats(athlete_id)
         ytd_distance = float(stats.ytd_ride_totals.distance)
         yearly_summary = {"current": ytd_distance / 1000, "goal": 8000}
 
-        # Le reste du code pour les activités, carte, etc. est inchangé
         activities_json = []
         for activity in activities[:10]:
             activities_json.append({
@@ -73,11 +71,13 @@ def strava_handler():
             "activities": activities_json,
             "latest_activity_map": latest_activity_map_polyline,
             "elevation_data": elevation_data,
-            "goals": {
-                "weekly": weekly_summary,
-                "yearly": yearly_summary
-            }
+            "goals": { "weekly": weekly_summary, "yearly": yearly_summary }
         })
 
     except Exception as e:
+        # --- AJOUT CRUCIAL ICI ---
+        # On imprime l'erreur complète dans les logs de Render
+        print("!!! ERREUR DÉTECTÉE DANS LE BLOC TRY/EXCEPT !!!")
+        print(traceback.format_exc())
+        # --- FIN DE L'AJOUT ---
         return jsonify({'error': str(e)}), 500
