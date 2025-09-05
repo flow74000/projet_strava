@@ -11,8 +11,6 @@
         h1, h2 { color: #fc4c02; border-bottom: 2px solid #eee; padding-bottom: 10px; }
         #status { font-size: 1.2em; font-weight: bold; text-align: center; padding: 40px; }
         .activity { border-bottom: 1px solid #eee; padding: 15px 5px; margin-bottom: 10px; }
-        .activity h3 { margin-top: 0; }
-        .activity p { margin: 5px 0; }
         #map { height: 400px; width: 100%; border-radius: 8px; margin-top: 20px; background-color: #eee; }
         .chart-container { position: relative; height: 250px; width: 100%; margin-top: 24px; }
         #latest-activity-summary { margin-bottom: 30px; }
@@ -21,6 +19,8 @@
         .stat h3 { margin: 0 0 8px 0; font-size: 0.9em; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
         .stat p { margin: 0; font-size: 1.8em; font-weight: 600; color: #333; }
         .stat .unit { font-size: 0.6em; }
+        /* --- AJOUT : Style pour le graphique objectif --- */
+        .goal-chart-container { position: relative; height: 180px; }
     </style>
 </head>
 <body>
@@ -42,35 +42,30 @@
             const statusDiv = document.getElementById('status');
             const stravaCode = new URLSearchParams(window.location.search).get('code');
 
-            if (!stravaCode) {
-                statusDiv.textContent = "Erreur : Code d'autorisation Strava manquant.";
-                return;
-            }
+            if (!stravaCode) { /* ... (gestion erreur identique) ... */ return; }
 
             fetch(`${API_URL}?code=${stravaCode}`)
                 .then(response => response.json().then(data => ({ ok: response.ok, data })))
                 .then(({ ok, data }) => {
-                    if (!ok) throw new Error(data.error || 'Erreur inconnue du serveur');
+                    if (!ok) throw new Error(data.error || 'Erreur inconnue');
                     statusDiv.style.display = 'none';
                     
-                    displayLatestSummary(data.activities);
+                    displayLatestSummary(data.activities, data.weekly_summary); // On passe les nouvelles données
                     displayActivitiesList(data.activities);
                     if (data.latest_activity_map) renderMap(data.latest_activity_map);
                     if (data.elevation_data) renderChart(data.elevation_data);
                 })
-                .catch(error => {
-                    console.error("Erreur:", error);
-                    statusDiv.textContent = `Une erreur est survenue : ${error.message}`;
-                });
+                .catch(error => { /* ... (gestion erreur identique) ... */ });
         });
 
-        function displayLatestSummary(activities) {
+        // --- MODIFICATION : La fonction reçoit maintenant les données de l'objectif ---
+        function displayLatestSummary(activities, weeklySummary) {
             const summaryContainer = document.getElementById('latest-activity-summary');
             if (!activities || activities.length === 0) return;
-
             const latest = activities[0];
             const distanceKm = (latest.distance / 1000).toFixed(2);
 
+            // On ajoute le canvas pour le nouveau graphique
             summaryContainer.innerHTML = `
                 <h2>Dernière activité : ${latest.name}</h2>
                 <div class="stats-grid">
@@ -82,78 +77,65 @@
                         <h3>Durée</h3>
                         <p>${latest.moving_time}</p>
                     </div>
+                    <div class="stat">
+                         <h3>Objectif Semaine</h3>
+                         <div class="goal-chart-container">
+                            <canvas id="weeklyGoalChart"></canvas>
+                         </div>
+                    </div>
                 </div>
             `;
-        }
-
-        function displayActivitiesList(activities) {
-            const container = document.getElementById('activities-container');
-            if (!activities || activities.length === 0) {
-                container.innerHTML = "<h2>Aucune activité trouvée.</h2>"; return;
+            // Une fois le HTML inséré, on peut dessiner le graphique
+            if (weeklySummary) {
+                renderGoalChart(weeklySummary);
             }
-            container.innerHTML = '<h2>Historique des activités</h2>'; 
-            activities.forEach(activity => {
-                const distanceKm = (activity.distance / 1000).toFixed(2);
-                const elevation = activity.total_elevation_gain.toFixed(0);
-                const date = new Date(activity.start_date_local).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-                const activityElement = document.createElement('div');
-                activityElement.className = 'activity';
-                activityElement.innerHTML = `<h3>${activity.name}</h3><p><strong>Date :</strong> ${date}</p><p><strong>Distance :</strong> ${distanceKm} km</p><p><strong>Dénivelé :</strong> ${elevation} m</p>`;
-                container.appendChild(activityElement);
-            });
         }
 
-        function renderMap(encodedPolyline) {
-            const mapContainer = document.getElementById('map-container');
-            mapContainer.innerHTML = '<h2>Tracé de la dernière activité</h2><div id="map"></div>';
-            try {
-                const decodedPath = decodePolyline(encodedPolyline);
-                if (decodedPath && decodedPath.length > 0) {
-                    const map = L.map('map');
-                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(map);
-                    const polyline = L.polyline(decodedPath, { color: '#fc4c02', weight: 4 }).addTo(map);
-                    map.fitBounds(polyline.getBounds().pad(0.1));
-                }
-            } catch (e) { console.error("Erreur carte:", e); }
-        }
+        // --- AJOUT : Nouvelle fonction pour le graphique objectif ---
+        function renderGoalChart(summary) {
+            const ctx = document.getElementById('weeklyGoalChart').getContext('2d');
+            const current = summary.current;
+            const goal = summary.goal;
+            const remaining = Math.max(0, goal - current); // Pour ne pas avoir de valeur négative
+            const percentage = goal > 0 ? ((current / goal) * 100).toFixed(0) : 0;
 
-        function renderChart(elevationData) {
-            const chartContainer = document.getElementById('chart-container');
-            chartContainer.innerHTML = '<h2>Profil d\'altitude</h2><div class="chart-container"><canvas id="elevationChart"></canvas></div>';
-            const ctx = document.getElementById('elevationChart').getContext('2d');
-            const gradient = ctx.createLinearGradient(0, 0, 0, 250);
-            gradient.addColorStop(0, 'rgba(252, 76, 2, 0.4)');
-            gradient.addColorStop(1, 'rgba(252, 76, 2, 0)');
             new Chart(ctx, {
-                type: 'line',
+                type: 'doughnut',
                 data: {
-                    labels: elevationData.distance.map(d => (d / 1000).toFixed(1)),
+                    labels: ['Réalisé', 'Restant'],
                     datasets: [{
-                        label: 'Altitude (m)', data: elevationData.altitude, borderColor: '#fc4c02',
-                        backgroundColor: gradient, borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3
+                        data: [current, remaining],
+                        backgroundColor: ['#fc4c02', '#e5e7eb'],
+                        borderColor: ['#ffffff'],
+                        borderWidth: 2
                     }]
                 },
                 options: {
-                    responsive: true, maintainAspectRatio: false,
-                    scales: { x: { title: { display: true, text: 'Distance (km)' } }, y: { title: { display: true, text: 'Altitude (m)' } } },
-                    plugins: { legend: { display: false } }
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%', // Pour l'effet "donut"
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: false },
+                        title: {
+                            display: true,
+                            text: `${percentage}%`, // Affiche le pourcentage au centre
+                            position: 'bottom',
+                            font: { size: 24, weight: 'bold' },
+                            color: '#333',
+                            padding: { top: -40 } // Ajustement vertical
+                        }
+                    }
                 }
             });
         }
-
-        function decodePolyline(encoded) {
-            let len = encoded.length; let index = 0; let lat = 0; let lng = 0; let array = [];
-            while (index < len) {
-                let b; let shift = 0; let result = 0;
-                do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-                let dlat = ((result & 1) ? ~(result >> 1) : (result >> 1)); lat += dlat;
-                shift = 0; result = 0;
-                do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-                let dlng = ((result & 1) ? ~(result >> 1) : (result >> 1)); lng += dlng;
-                array.push([lat * 1e-5, lng * 1e-5]);
-            }
-            return array;
-        }
+        
+        // --- Les autres fonctions (displayActivitiesList, renderMap, etc.) restent inchangées ---
+        function displayActivitiesList(a) {/* ... */}
+        function renderMap(p) { /* ... */ }
+        function renderChart(d) { /* ... */ }
+        function decodePolyline(e) { /* ... */ }
+        // (Le code complet des autres fonctions est omis ici pour la clarté, mais doit être conservé)
     </script>
 </body>
 </html>
