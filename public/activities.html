@@ -2,84 +2,166 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mon Tableau de Bord Strava</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        /* ... (tous les styles CSS précédents restent les mêmes) ... */
-        /* Ajout d'un style pour la couleur de la Forme */
-        .form-green { color: #22c55e; }
-        .form-blue { color: #3b82f6; }
-        .form-red { color: #ef4444; }
+        :root {
+            --strava-orange: #fc5200; --gray-100: #f3f4f6; --gray-200: #e5e7eb;
+            --gray-500: #6b7280; --gray-800: #1f2937; --white: #ffffff;
+            --form-green: #22c55e; --form-blue: #3b82f6; --form-red: #ef4444;
+        }
+        body { font-family: 'Inter', sans-serif; margin: 0; padding: 24px; background-color: var(--gray-100); }
+        .main-container { max-width: 1200px; margin: auto; }
+        .card { background-color: var(--white); border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
+        h1, h2 { color: var(--gray-800); margin-top: 0; }
+        h1 { font-size: 2.25rem; font-weight: 800; }
+        h2 { font-size: 1.5rem; font-weight: 700; padding-bottom: 16px; border-bottom: 1px solid var(--gray-200); }
+        .dashboard-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 20px; }
+        .goals-container { display: flex; gap: 24px; }
+        .goal-stat { display: flex; align-items: center; gap: 16px; }
+        .goal-chart-container { position: relative; width: 70px; height: 70px; }
+        .goal-chart-container canvas { position: absolute; top: 0; left: 0; }
+        .goal-percentage { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.2rem; font-weight: 600; }
+        .goal-details h3 { margin: 0; font-size: 1rem; color: var(--gray-500); font-weight: 500; text-transform: uppercase; }
+        .goal-details p { margin: 4px 0 0; font-size: 1.2rem; font-weight: 600; }
+        .goal-details .sub { font-size: 0.9rem; color: var(--gray-500); }
+        .summary-card { background-color: var(--white); padding: 20px; rounded-xl border border-gray-200 shadow-sm; }
+        .summary-card h3 { font-size: 0.875rem; font-semibold text-gray-500 uppercase tracking-wider; }
+        .summary-card p { font-size: 2.25rem; font-extrabold text-gray-900 mt-2; }
+        .latest-activity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; align-items: flex-start; }
+        #map { height: 400px; width: 100%; border-radius: 8px; background-color: var(--gray-200); }
+        .summary-panel .date { font-size: 1rem; color: var(--gray-500); margin-bottom: 4px; }
+        .summary-panel h3 { font-size: 1.875rem; font-weight: 700; margin: 0 0 24px 0; }
+        .stat-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--gray-200); }
+        .stat-item:last-child { border-bottom: none; }
+        .stat-label { display: flex; align-items: center; gap: 10px; font-weight: 500; color: var(--gray-500); }
+        .stat-value { font-weight: 600; font-size: 1.1rem; }
+        .stat-value .unit { font-size: 0.9em; color: var(--gray-500); margin-left: 4px; }
+        .chart-container { position: relative; height: 250px; width: 100%; }
+        .activity-table { width: 100%; border-collapse: collapse; }
+        .activity-table td { padding: 16px; text-align: left; border-bottom: 1px solid var(--gray-200); font-weight: 500; }
+        .activity-table .strava-orange { color: var(--strava-orange); font-weight: 600; }
     </style>
 </head>
 <body>
     <div class="main-container">
-        <div id="status-container">...</div>
+        <div id="status-container" class="card" style="text-align: center; font-size: 1.2em; font-weight: bold; padding: 40px;">
+            Chargement des données...
+        </div>
+
         <div id="content-wrapper" style="display: none;">
             <div class="dashboard-header">
                 <h1>Mon Tableau de Bord</h1>
                 <div class="goals-container" id="goals-container"></div>
             </div>
-
-            <div id="fitness-summary-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                </div>
-
+            
+            <div id="fitness-summary-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"></div>
+            
             <div class="card">
+                <div id="latest-activity-summary"></div>
+                <div class="latest-activity-grid">
+                    <div id="summary-details-container" class="summary-panel"></div>
+                    <div id="map-container"></div>
                 </div>
+                <div id="chart-container" style="display: none;"></div>
             </div>
+            <div class="card">
+                <h2>Historique</h2>
+                <table class="activity-table"><tbody id="history-table-body"></tbody></table>
+            </div>
+        </div>
     </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // ... (logique fetch inchangée) ...
-            fetch(/*...*/)
-                .then(/*...*/)
+            const API_URL = "https://projet-strava-api.onrender.com/api/strava";
+            const statusContainer = document.getElementById('status-container');
+            const contentWrapper = document.getElementById('content-wrapper');
+            const stravaCode = new URLSearchParams(window.location.search).get('code');
+
+            if (!stravaCode) { statusContainer.innerHTML = "<h1>Erreur : Code d'autorisation manquant.</h1>"; return; }
+
+            // --- LIGNE FETCH CORRIGÉE ---
+            fetch(`${API_URL}?code=${stravaCode}`)
+                .then(response => response.json().then(data => ({ ok: response.ok, data })))
                 .then(({ ok, data }) => {
-                    // ... (logique inchangée)
+                    if (!ok) throw new Error(data.error || 'Erreur inconnue du serveur');
+                    statusContainer.style.display = 'none';
+                    contentWrapper.style.display = 'block';
                     renderPage(data);
+                })
+                .catch(error => {
+                    console.error("Erreur:", error);
+                    statusContainer.innerHTML = `<h1>Une erreur est survenue</h1><p>${error.message}</p>`;
                 });
         });
 
         function renderPage(data) {
             renderGoals(data.goals);
-            renderFitnessSummary(data.fitness_summary); // On appelle la nouvelle fonction
+            renderFitnessSummary(data.fitness_summary);
             renderLatestActivity(data.activities, data.latest_activity_map, data.elevation_data);
             renderHistory(data.activities);
             lucide.createIcons();
         }
 
-        // NOUVELLE FONCTION POUR LES STATS DE FORME
+        function renderGoals(goals) {
+            if (!goals) return;
+            const container = document.getElementById('goals-container');
+            container.innerHTML = '';
+            if (goals.weekly) { container.innerHTML += createGoalStat('weeklyGoal', 'Objectif Semaine', goals.weekly); }
+            if (goals.yearly) { container.innerHTML += createGoalStat('yearlyGoal', 'Objectif Annuel', goals.yearly); }
+            if (goals.weekly) renderGoalChart('weeklyGoalChart', goals.weekly);
+            if (goals.yearly) renderGoalChart('yearlyGoalChart', goals.yearly);
+        }
+
         function renderFitnessSummary(summary) {
             const container = document.getElementById('fitness-summary-container');
             if (!summary) return;
-            
-            const getFormClass = (form) => {
-                if (form == null) return '';
-                if (form > 5) return 'form-blue';
-                if (form > -10) return 'form-green';
-                return 'form-red';
-            };
-
+            const getFormClass = (form) => { if (form==null) return ''; if (form > 5) return 'form-blue'; if (form > -10) return 'form-green'; return 'form-red'; };
             container.innerHTML = `
                 ${createSummaryCard('trending-up', 'Fitness (CTL)', summary.fitness)}
                 ${createSummaryCard('flame', 'Fatigue (ATL)', summary.fatigue)}
                 ${createSummaryCard('shield-check', 'Forme (TSB)', summary.form, getFormClass(summary.form))}
-                ${createSummary_card('lungs', 'VO2max Estimée', summary.vo2max)}
+                ${createSummaryCard('lungs', 'VO2max Estimée', summary.vo2max)}
             `;
         }
 
         function createSummaryCard(icon, title, value, valueClass = '') {
-             return `
-                <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-                    <div class="flex justify-between items-center">
-                        <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">${title}</h3>
-                        <i data-lucide="${icon}" class="w-5 h-5 text-gray-400"></i>
-                    </div>
-                    <p class="text-4xl font-extrabold text-gray-900 mt-2 ${valueClass}">${value ?? '-'}</p>
-                </div>`;
+             return `<div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm"><div class="flex justify-between items-center"><h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">${title}</h3><i data-lucide="${icon}" class="w-5 h-5 text-gray-400"></i></div><p class="text-4xl font-extrabold text-gray-900 mt-2 ${valueClass}">${value ?? '-'}</p></div>`;
         }
         
-        // ... (toutes les autres fonctions JavaScript restent identiques)
+        function renderLatestActivity(activities, mapData, chartData) {
+            const summaryTitle = document.getElementById('latest-activity-summary');
+            const detailsContainer = document.getElementById('summary-details-container');
+            if (!activities || activities.length === 0) return;
+            const latest = activities[0];
+            summaryTitle.innerHTML = `<h2>Dernière Activité</h2>`;
+            detailsContainer.innerHTML = `<p class="date">${formatDate(latest.start_date_local)}</p><h3>${latest.name}</h3>${createStatDetail('ruler','Distance',`${(latest.distance/1000).toFixed(2)}`,'km')}${createStatDetail('timer','Durée',formatMovingTime(latest.moving_time))}${createStatDetail('trending-up','Dénivelé',`${latest.total_elevation_gain.toFixed(0)}`,'m')}`;
+            if (mapData) renderMap(mapData);
+            if (chartData) { document.getElementById('chart-container').style.display = 'block'; renderChart(chartData); }
+        }
+
+        function renderHistory(activities) {
+            const historyTableBody = document.getElementById('history-table-body');
+            if (!activities || !activities.length) return;
+            activities.forEach(activity => { const row = document.createElement('tr'); row.innerHTML = `<td class="strava-orange">${activity.name}</td><td>${(activity.distance / 1000).toFixed(2)} km</td><td>${new Date(activity.start_date_local).toLocaleDateString('fr-FR')}</td>`; historyTableBody.appendChild(row); });
+        }
         
+        // Le reste des fonctions helper (inchangé)
+        function createGoalStat(idPrefix, title, data) { const remaining = (data.goal - data.current).toFixed(0); const percentage = data.goal > 0 ? ((data.current / data.goal) * 100).toFixed(0) : 0; return `<div class="goal-stat"><div class="goal-chart-container"><canvas id="${idPrefix}Chart"></canvas><div class="goal-percentage">${percentage}%</div></div><div class="goal-details"><h3>${title}</h3><p>${remaining}km à parcourir</p><p class="sub">${data.current.toFixed(0)}km / ${data.goal}km</p></div></div>`;}
+        function renderGoalChart(canvasId,data){const ctx=document.getElementById(canvasId).getContext("2d");new Chart(ctx,{type:"doughnut",data:{datasets:[{data:[data.current,Math.max(0,data.goal-data.current)],backgroundColor:["#fc5200","#f3f4f6"],borderWidth:0,borderRadius:5}]},options:{responsive:!0,maintainAspectRatio:!1,cutout:"75%",plugins:{legend:{display:!1},tooltip:{enabled:!1}}}});}
+        function createStatDetail(icon, label, value, unit = '') { return `<div class="stat-item"><div class="stat-label"><i data-lucide="${icon}"></i>${label}</div><div class="stat-value">${value} <span class="unit">${unit}</span></div></div>`; }
+        function formatDate(d) { return new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
+        function formatMovingTime(timeValue) { if(typeof timeValue==='string'&&timeValue.includes(':')){const parts=timeValue.split(':').map(Number);if(parts.length===3){const[hours,minutes,seconds]=parts;if(hours>0)return`${hours}h ${minutes}min`;return`${minutes}min ${seconds}s`;}}const totalSeconds=parseInt(timeValue,10);if(isNaN(totalSeconds))return timeValue;const hours=Math.floor(totalSeconds/3600);const minutes=Math.floor((totalSeconds%3600)/60);const seconds=totalSeconds%60;if(hours>0){return`${hours}h ${minutes}min`;}else{return`${minutes}min ${seconds}s`;}}
+        function renderMap(p){const c=document.getElementById("map-container");c.innerHTML='<div id="map"></div>';try{const d=decodePolyline(p);if(d&&d.length>0){const m=L.map("map");L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:'&copy; OSM'}).addTo(m);const l=L.polyline(d,{color:"#fc4c02",weight:4}).addTo(m);m.fitBounds(l.getBounds().pad(.1))}}catch(e){console.error("Erreur carte:",e)}}
+        function renderChart(d){const c=document.getElementById("chart-container");c.innerHTML='<div class="chart-container"><canvas id="elevationChart"></canvas></div>';const x=document.getElementById("elevationChart").getContext("2d");const g=x.createLinearGradient(0,0,0,250);g.addColorStop(0,"rgba(252,76,2,0.4)"),g.addColorStop(1,"rgba(252,76,2,0)");new Chart(x,{type:"line",data:{labels:d.distance.map(v=>(v/1000).toFixed(1)),datasets:[{label:"Altitude (m)",data:d.altitude,borderColor:"#fc4c02",backgroundColor:g,borderWidth:2,pointRadius:0,fill:!0,tension:.3}]},options:{responsive:!0,maintainAspectRatio:!1,scales:{x:{title:{display:!0,text:"Distance (km)"}},y:{title:{display:!0,text:"Altitude (m)"}}},plugins:{legend:{display:!1}}}});}
+        function decodePolyline(e){let l=e.length,i=0,a=0,n=0,r=[];while(i<l){let t,h=0,s=0;do{t=e.charCodeAt(i++)-63,s|=(t&31)<<h,h+=5}while(t>=32);let o=s&1?~(s>>1):s>>1;a+=o,h=0,s=0;do{t=e.charCodeAt(i++)-63,s|=(t&31)<<h,h+=5}while(t>=32);let d=s&1?~(s>>1):s>>1;n+=d,r.push([a*1e-5,n*1e-5])}return r}
     </script>
 </body>
 </html>
