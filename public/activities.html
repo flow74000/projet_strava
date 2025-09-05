@@ -23,9 +23,6 @@
         .goal-details h3 { margin: 0; font-size: 1rem; color: var(--gray-500); font-weight: 500; text-transform: uppercase; }
         .goal-details p { margin: 4px 0 0; font-size: 1.2rem; font-weight: 600; }
         .goal-details .sub { font-size: 0.9rem; color: var(--gray-500); }
-        .summary-card { background-color: var(--white); padding: 20px; rounded-xl border border-gray-200 shadow-sm; }
-        .summary-card h3 { font-size: 0.875rem; font-semibold text-gray-500 uppercase tracking-wider; }
-        .summary-card p { font-size: 2.25rem; font-extrabold text-gray-900 mt-2; }
         .latest-activity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; align-items: flex-start; }
         #map { height: 400px; width: 100%; border-radius: 8px; background-color: var(--gray-200); }
         .summary-panel .date { font-size: 1rem; color: var(--gray-500); margin-bottom: 4px; }
@@ -53,8 +50,6 @@
                 <h1>Mon Tableau de Bord</h1>
                 <div class="goals-container" id="goals-container"></div>
             </div>
-            
-            <div id="fitness-summary-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"></div>
             
             <div class="card">
                 <div id="latest-activity-summary"></div>
@@ -100,7 +95,6 @@
 
         function renderPage(data) {
             renderGoals(data.goals);
-            renderFitnessSummary(data.fitness_summary);
             renderLatestActivity(data.activities, data.latest_activity_map, data.elevation_data);
             renderHistory(data.activities);
             lucide.createIcons();
@@ -115,44 +109,49 @@
             if (goals.weekly) renderGoalChart('weeklyGoalChart', goals.weekly);
             if (goals.yearly) renderGoalChart('yearlyGoalChart', goals.yearly);
         }
-
-        function renderFitnessSummary(summary) {
-            const container = document.getElementById('fitness-summary-container');
-            if (!summary) return;
-            const getFormClass = (form) => { if (form==null) return ''; if (form > 5) return 'form-blue'; if (form > -10) return 'form-green'; return 'form-red'; };
-            container.innerHTML = `
-                ${createSummaryCard('trending-up', 'Fitness (CTL)', summary.fitness)}
-                ${createSummaryCard('flame', 'Fatigue (ATL)', summary.fatigue)}
-                ${createSummaryCard('shield-check', 'Forme (TSB)', summary.form, getFormClass(summary.form))}
-                ${createSummaryCard('lungs', 'VO2max Estimée', summary.vo2max)}
-            `;
-        }
-
-        function createSummaryCard(icon, title, value, valueClass = '') {
-             return `<div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm"><div class="flex justify-between items-center"><h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">${title}</h3><i data-lucide="${icon}" class="w-5 h-5 text-gray-400"></i></div><p class="text-4xl font-extrabold text-gray-900 mt-2 ${valueClass}">${value ?? '-'}</p></div>`;
-        }
         
         function renderLatestActivity(activities, mapData, chartData) {
             const summaryTitle = document.getElementById('latest-activity-summary');
             const detailsContainer = document.getElementById('summary-details-container');
             if (!activities || activities.length === 0) return;
+
             const latest = activities[0];
             summaryTitle.innerHTML = `<h2>Dernière Activité</h2>`;
-            detailsContainer.innerHTML = `<p class="date">${formatDate(latest.start_date_local)}</p><h3>${latest.name}</h3>${createStatDetail('ruler','Distance',`${(latest.distance / 1000).toFixed(2)}`,'km')}${createStatDetail('timer','Durée',formatMovingTime(latest.moving_time))}${createStatDetail('trending-up','Dénivelé',`${latest.total_elevation_gain.toFixed(0)}`,'m')}`;
+            detailsContainer.innerHTML = `
+                <p class="date">${formatDate(latest.start_date_local)}</p>
+                <h3>${latest.name}</h3>
+                ${createStatDetail('ruler', 'Distance', `${(latest.distance / 1000).toFixed(2)}`, 'km')}
+                ${createStatDetail('timer', 'Durée', formatMovingTime(latest.moving_time))}
+                ${createStatDetail('trending-up', 'Dénivelé', `${latest.total_elevation_gain.toFixed(0)}`, 'm')}
+            `;
+
             if (mapData) renderMap(mapData);
-            if (chartData) { document.getElementById('chart-container').style.display = 'block'; renderChart(chartData); }
+            if (chartData) {
+                document.getElementById('chart-container').style.display = 'block';
+                renderChart(chartData);
+            }
         }
 
         function renderHistory(activities) {
             const historyTableBody = document.getElementById('history-table-body');
             if (!activities || !activities.length) return;
-            activities.forEach(activity => { const row = document.createElement('tr'); row.innerHTML = `<td class="strava-orange">${activity.name}</td><td>${(activity.distance / 1000).toFixed(2)} km</td><td>${new Date(activity.start_date_local).toLocaleDateString('fr-FR')}</td>`; historyTableBody.appendChild(row); });
+            
+            historyTableBody.innerHTML = ''; // On vide la table avant de la remplir
+            activities.forEach(activity => {
+                const row = document.createElement('tr');
+                row.innerHTML = `<td class="strava-orange">${activity.name}</td><td>${(activity.distance / 1000).toFixed(2)} km</td><td>${new Date(activity.start_date_local).toLocaleDateString('fr-FR')}</td>`;
+                historyTableBody.appendChild(row);
+            });
         }
         
         function createGoalStat(idPrefix, title, data) { const remaining = (data.goal - data.current).toFixed(0); const percentage = data.goal > 0 ? ((data.current / data.goal) * 100).toFixed(0) : 0; return `<div class="goal-stat"><div class="goal-chart-container"><canvas id="${idPrefix}Chart"></canvas><div class="goal-percentage">${percentage}%</div></div><div class="goal-details"><h3>${title}</h3><p>${remaining}km à parcourir</p><p class="sub">${data.current.toFixed(0)}km / ${data.goal}km</p></div></div>`;}
         function renderGoalChart(canvasId,data){const ctx=document.getElementById(canvasId).getContext("2d");new Chart(ctx,{type:"doughnut",data:{datasets:[{data:[data.current,Math.max(0,data.goal-data.current)],backgroundColor:["#fc5200","#f3f4f6"],borderWidth:0,borderRadius:5}]},options:{responsive:!0,maintainAspectRatio:!1,cutout:"75%",plugins:{legend:{display:!1},tooltip:{enabled:!1}}}});}
         function createStatDetail(icon, label, value, unit = '') { return `<div class="stat-item"><div class="stat-label"><i data-lucide="${icon}"></i>${label}</div><div class="stat-value">${value} <span class="unit">${unit}</span></div></div>`; }
         function formatDate(d) { return new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
-        function formatMovingTime(timeValue) { if(typeof timeValue==='string'&&timeValue.includes(':')){const parts=timeValue.split(':').map(Number);if(parts.length===3){const[hours,minutes,seconds]=parts;if(hours>0)return`${hours}h ${minutes}min`;return`${minutes}min ${seconds}s`;}}const totalSeconds=parseInt(timeValue,10);if(isNaN(totalSeconds))return timeValue;const hours=Math.floor(totalSeconds/3600);const minutes=Math.floor((totalSeconds%3600)/60);const seconds=totalSeconds%60;if(hours>0){return`${hours}h ${minutes}min`;}else{return`${minutes}min ${seconds}s`;}}
+        function formatMovingTime(timeValue) { const totalSeconds = parseInt(timeValue.split(':')[0]) * 3600 + parseInt(timeValue.split(':')[1]) * 60 + parseInt(timeValue.split(':')[2]); const hours = Math.floor(totalSeconds / 3600); const minutes = Math.floor((totalSeconds % 3600) / 60); const seconds = totalSeconds % 60; if (hours > 0) { return `${hours}h ${minutes}min`; } else { return `${minutes}min ${seconds}s`; } }
         function renderMap(p){const c=document.getElementById("map-container");c.innerHTML='<div id="map"></div>';try{const d=decodePolyline(p);if(d&&d.length>0){const m=L.map("map");L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:'&copy; OSM'}).addTo(m);const l=L.polyline(d,{color:"#fc4c02",weight:4}).addTo(m);m.fitBounds(l.getBounds().pad(.1))}}catch(e){console.error("Erreur carte:",e)}}
-        function renderChart(d){const c=document.getElementById("chart-container");c.innerHTML='<div class="chart-container"><canvas id="elevationChart"></canvas></div>';const x=document.getElementById("elevationChart").getContext("2d");const g=x.createLinearGradient(0,0,0,250);g.addColorStop(0,"rgba(252,76,2,0.4)"),g.addColorStop(1,"rgba(252,76,2,0)");new Chart(x,{type:"line",data:{labels:d.distance.map(v=>(v/1000).toFixed(1)),datasets:[{label:"Altitude (m)",data:d.altitude,borderColor:"#fc4c02",backgroundColor:g,borderWidth:2,pointRadius:0,fill:!0,tension:.3}]},options:{responsive:!0,maintainAspectRatio:!1,scales:{x:{title:{display:!0,text:"Distance (km
+        function renderChart(d){const c=document.getElementById("chart-container");c.innerHTML='<div class="chart-container"><canvas id="elevationChart"></canvas></div>';const x=document.getElementById("elevationChart").getContext("2d");const g=x.createLinearGradient(0,0,0,250);g.addColorStop(0,"rgba(252,76,2,0.4)"),g.addColorStop(1,"rgba(252,76,2,0)");new Chart(x,{type:"line",data:{labels:d.distance.map(v=>(v/1000).toFixed(1)),datasets:[{label:"Altitude (m)",data:d.altitude,borderColor:"#fc4c02",backgroundColor:g,borderWidth:2,pointRadius:0,fill:!0,tension:.3}]},options:{responsive:!0,maintainAspectRatio:!1,scales:{x:{title:{display:true,text:"Distance (km)"}},y:{title:{display:true,text:"Altitude (m)"}}},plugins:{legend:{display:!1}}}});}
+        function decodePolyline(e){let l=e.length,i=0,a=0,n=0,r=[];while(i<l){let t,h=0,s=0;do{t=e.charCodeAt(i++)-63,s|=(t&31)<<h,h+=5}while(t>=32);let o=s&1?~(s>>1):s>>1;a+=o,h=0,s=0;do{t=e.charCodeAt(i++)-63,s|=(t&31)<<h,h+=5}while(t>=32);let d=s&1?~(s>>1):s>>1;n+=d,r.push([a*1e-5,n*1e-5])}return r}
+    </script>
+</body>
+</html>
