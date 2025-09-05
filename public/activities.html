@@ -1,85 +1,79 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    </head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mon Tableau de Bord Strava</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root { --strava-orange: #fc5200; --gray-100: #f3f4f6; --gray-200: #e5e7eb; --gray-500: #6b7280; --gray-800: #1f2937; --white: #ffffff; }
+        body { font-family: 'Inter', sans-serif; margin: 0; padding: 24px; background-color: var(--gray-100); }
+        .main-container { max-width: 1200px; margin: auto; }
+        .card { background-color: var(--white); border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
+        h1, h2 { color: var(--gray-800); margin-top: 0; }
+        h1 { font-size: 2.25rem; font-weight: 800; }
+        h2 { font-size: 1.5rem; font-weight: 700; padding-bottom: 16px; border-bottom: 1px solid var(--gray-200); }
+        .dashboard-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 20px; }
+        /* ... (le reste de vos styles CSS est inchangé) ... */
+    </style>
+</head>
 <body>
+    <div class="main-container">
+        <div id="status-container" class="card" style="text-align: center; font-size: 1.2em; font-weight: bold; padding: 40px;">
+            Chargement des données...
+        </div>
+        <div id="content-wrapper" style="display: none;">
+            </div>
+    </div>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // ... (logique fetch inchangée) ...
-            fetch(/*...*/)
-                .then(/*...*/)
-                .then(({ ok, data }) => {
-                    // ... (logique inchangée)
-                    renderPage(data);
+            const API_URL = "https://projet-strava-api.onrender.com/api/strava";
+            const statusContainer = document.getElementById('status-container');
+            const contentWrapper = document.getElementById('content-wrapper');
+            const stravaCode = new URLSearchParams(window.location.search).get('code');
+
+            if (!stravaCode) {
+                statusContainer.innerHTML = "<h1>Erreur : Code d'autorisation manquant.</h1>";
+                return;
+            }
+
+            // AJOUT DE DÉBOGAGE : On affiche l'URL juste avant l'appel
+            const fullApiUrl = `${API_URL}?code=${stravaCode}`;
+            console.log("Tentative de connexion à l'URL :", fullApiUrl);
+
+            fetch(fullApiUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        // Si le serveur répond avec une erreur (4xx, 5xx)
+                        return response.text().then(text => { 
+                            throw new Error(`Erreur du serveur (status ${response.status}): ${text}`);
+                        });
+                    }
+                    return response.json();
                 })
+                .then(data => {
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    statusContainer.style.display = 'none';
+                    contentWrapper.style.display = 'block';
+                    // Le reste de votre logique de rendu va ici...
+                    // renderPage(data);
+                })
+                .catch(error => {
+                    console.error("Erreur détaillée dans le bloc catch :", error);
+                    statusContainer.innerHTML = `<h1>Une erreur est survenue</h1><p>${error.message}</p>`;
+                });
         });
 
-        function renderPage(data) {
-            // ... (le début de la fonction est inchangé)
-            
-            // --- MODIFICATION ICI : On passe aussi le monde Zwift à la fonction renderMap ---
-            renderLatestActivity(data.activities, data.latest_activity_map, data.elevation_data, data.zwift_world);
-
-            // ... (le reste de la fonction est inchangé)
-        }
-
-        function renderLatestActivity(activities, mapData, chartData, zwiftWorld) {
-            // ... (le début de la fonction est inchangé)
-
-            // --- MODIFICATION ICI : On passe le monde Zwift à la fonction renderMap ---
-            if (mapData) renderMap(mapData, zwiftWorld);
-            
-            // ... (le reste de la fonction est inchangé)
-        }
-
-        // --- MODIFICATION MAJEURE ICI : La fonction renderMap gère les deux cas ---
-        function renderMap(encodedPolyline, zwiftWorld = null) {
-            const mapContainer = document.getElementById('map-container');
-            mapContainer.innerHTML = '<div id="map"></div>';
-            
-            try {
-                const map = L.map('map');
-                
-                if (zwiftWorld) {
-                    // Si c'est une activité Zwift, on utilise le fond de carte zwiftmap
-                    console.log(`Monde Zwift détecté : ${zwiftWorld}`);
-                    L.tileLayer('https://api.zwifthacks.com/zwiftmap/tiles/{world}/{z}/{x}/{y}.png', {
-                        world: zwiftWorld,
-                        attribution: '&copy; <a href="https://zwiftmap.com">ZwiftMap</a>'
-                    }).addTo(map);
-                } else {
-                    // Sinon, on utilise le fond de carte OpenStreetMap par défaut
-                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                    }).addTo(map);
-                }
-
-                const decodedPath = decodePolyline(encodedPolyline);
-                if (decodedPath && decodedPath.length > 0) {
-                    const polyline = L.polyline(decodedPath, {
-                        color: '#fc4c02',
-                        weight: 4
-                    }).addTo(map);
-                    map.fitBounds(polyline.getBounds().pad(0.1));
-                }
-            } catch (e) {
-                console.error("Erreur lors de la création de la carte:", e);
-                mapContainer.innerHTML = "<p>Impossible d'afficher la carte.</p>";
-            }
-        }
-        
-        // --- Le reste des fonctions est inchangé ---
-        const API_URL = "https://projet-strava-api.onrender.com/api/strava"; const statusContainer = document.getElementById('status-container'); const contentWrapper = document.getElementById('content-wrapper'); const stravaCode = new URLSearchParams(window.location.search).get('code');
-        function formatDate(d) { return new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
-        function createStatDetail(icon, label, value, unit = '') { return `<div class="stat-item"><div class="stat-label"><i data-lucide="${icon}"></i>${label}</div><div class="stat-value">${value} <span class="unit">${unit}</span></div></div>`; }
-        function formatMovingTime(timeValue) { const totalSeconds = parseInt(timeValue.split(':')[0]) * 3600 + parseInt(timeValue.split(':')[1]) * 60 + parseInt(timeValue.split(':')[2]); const hours = Math.floor(totalSeconds / 3600); const minutes = Math.floor((totalSeconds % 3600) / 60); const seconds = totalSeconds % 60; if (hours > 0) { return `${hours}h ${minutes}min`; } else { return `${minutes}min ${seconds}s`; } }
-        function renderChart(d){const c=document.getElementById("chart-container");const x=document.getElementById("elevationChart").getContext("2d");const g=x.createLinearGradient(0,0,0,250);g.addColorStop(0,"rgba(252,76,2,0.4)"),g.addColorStop(1,"rgba(252,76,2,0)");new Chart(x,{type:"line",data:{labels:d.distance.map(v=>(v/1000).toFixed(1)),datasets:[{label:"Altitude (m)",data:d.altitude,borderColor:"#fc4c02",backgroundColor:g,borderWidth:2,pointRadius:0,fill:!0,tension:.3}]},options:{responsive:!0,maintainAspectRatio:!1,scales:{x:{title:{display:!0,text:"Distance (km)"}},y:{title:{display:!0,text:"Altitude (m)"}}},plugins:{legend:{display:!1}}}});}
-        function decodePolyline(e){let l=e.length,i=0,a=0,n=0,r=[];while(i<l){let t,h=0,s=0;do{t=e.charCodeAt(i++)-63,s|=(t&31)<<h,h+=5}while(t>=32);let o=s&1?~(s>>1):s>>1;a+=o,h=0,s=0;do{t=e.charCodeAt(i++)-63,s|=(t&31)<<h,h+=5}while(t>=32);let d=s&1?~(s>>1):s>>1;n+=d,r.push([a*1e-5,n*1e-5])}return r}
-        function renderHistory(activities){const h=document.getElementById("history-table-body");if(!activities||!activities.length)return;activities.forEach(a=>{const r=document.createElement("tr");r.innerHTML=`<td class="strava-orange">${a.name}</td><td>${(a.distance/1e3).toFixed(2)} km</td><td>${a.total_elevation_gain.toFixed(0)} m</td><td>${new Date(a.start_date_local).toLocaleDateString("fr-FR")}</td>`,h.appendChild(r)})}
+        // Toutes vos fonctions de rendu (renderPage, renderGoals, etc.) iraient ici
+        // Pour l'instant, nous voulons juste voir si le fetch fonctionne.
     </script>
 </body>
 </html>
