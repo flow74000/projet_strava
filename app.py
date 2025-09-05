@@ -1,9 +1,9 @@
-# Fichier: app.py (Version avec envoi de l'historique de forme)
+# Fichier: app.py (Version finale et complète)
 
 import os
 import requests
 import traceback
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from stravalib.client import Client
@@ -30,7 +30,7 @@ def get_fitness_data():
         
         if not wellness_data: return None, None
 
-        wellness_data.sort(key=lambda x: x['id']) # On trie par date croissante pour le graphique
+        wellness_data.sort(key=lambda x: x['id'])
         latest_data = wellness_data[-1]
         
         ctl = latest_data.get('ctl')
@@ -45,7 +45,6 @@ def get_fitness_data():
             "form": round(form) if form is not None else None,
             "vo2max": round(vo2max, 1) if vo2max is not None else None
         }
-        # On retourne le résumé ET l'historique complet
         return summary, wellness_data
     except Exception as e:
         print(f"Erreur API Intervals.icu: {e}")
@@ -54,10 +53,8 @@ def get_fitness_data():
 @app.route("/api/strava")
 def strava_handler():
     try:
-        # --- MODIFICATION ICI : On récupère les deux types de données ---
         fitness_summary, form_chart_data = get_fitness_data()
         
-        # Le reste du code est inchangé
         client = Client()
         token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=request.args.get('code'))
         access_token = token_response['access_token']
@@ -65,14 +62,18 @@ def strava_handler():
         athlete = authed_client.get_athlete()
         athlete_id_strava = athlete.id
         activities = list(authed_client.get_activities(limit=50))
+        
         today = date.today()
         start_of_week = today - timedelta(days=today.weekday())
         weekly_distance = sum(float(getattr(act, 'distance', 0)) for act in activities if act.start_date_local.date() >= start_of_week)
         weekly_summary = {"current": weekly_distance / 1000, "goal": 200}
+        
         stats = authed_client.get_athlete_stats(athlete_id_strava)
         ytd_distance = float(stats.ytd_ride_totals.distance)
         yearly_summary = {"current": ytd_distance / 1000, "goal": 8000}
+        
         activities_json = [{'name': act.name, 'start_date_local': act.start_date_local.isoformat(), 'moving_time': str(getattr(act, 'moving_time', '0')), 'distance': float(getattr(act, 'distance', 0)), 'total_elevation_gain': float(getattr(act, 'total_elevation_gain', 0))} for act in activities[:10]]
+        
         latest_activity_map_polyline, elevation_data = None, None
         if activities:
             if hasattr(activities[0], 'map') and activities[0].map.summary_polyline: latest_activity_map_polyline = activities[0].map.summary_polyline
@@ -87,7 +88,7 @@ def strava_handler():
             "elevation_data": elevation_data,
             "goals": { "weekly": weekly_summary, "yearly": yearly_summary },
             "fitness_summary": fitness_summary,
-            "form_chart_data": form_chart_data # On ajoute l'historique pour le graphique
+            "form_chart_data": form_chart_data
         })
 
     except Exception as e:
