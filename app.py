@@ -1,8 +1,7 @@
-# Fichier: app.py (Version finale et complète)
+# Fichier: app.py (Version finale et définitivement corrigée)
 
 import os
 import requests
-import traceback
 from datetime import date, timedelta, datetime
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -11,13 +10,15 @@ from stravalib.client import Client
 app = Flask(__name__)
 CORS(app)
 
+# --- FONCTION POUR LES DONNÉES DE FORME (Intervals.icu) ---
 def get_fitness_data():
     athlete_id_icu = os.environ.get("INTERVALS_ATHLETE_ID")
     api_key = os.environ.get("INTERVALS_API_KEY")
     pma = float(os.environ.get("PMA_WATTS", 0))
     weight = float(os.environ.get("DEFAULT_WEIGHT", 70))
 
-    if not all([athlete_id_icu, api_key, pma]): return None
+    if not all([athlete_id_icu, api_key, pma]):
+        return None
 
     today = date.today()
     ninety_days_ago = today - timedelta(days=90)
@@ -49,19 +50,27 @@ def get_fitness_data():
 
 @app.route("/api/strava")
 def strava_handler():
+    STRAVA_CLIENT_ID = os.environ.get("STRAVA_CLIENT_ID")
+    STRAVA_CLIENT_SECRET = os.environ.get("STRAVA_CLIENT_SECRET")
+    
+    code = request.args.get('code')
+    if not code:
+        return jsonify({'error': 'Code manquant'}), 400
+
+    client = Client()
     try:
-        client = Client()
         token_response = client.exchange_code_for_token(
-            client_id=os.environ.get("STRAVA_CLIENT_ID"),
-            client_secret=os.environ.get("STRAVA_CLIENT_SECRET"),
-            code=request.args.get('code')
+            client_id=STRAVA_CLIENT_ID, client_secret=STRAVA_CLIENT_SECRET, code=code
         )
         access_token = token_response['access_token']
         authed_client = Client(access_token=access_token)
         
+        # --- CORRECTION FINALE ET DÉFINITIVE ICI ---
+        # On récupère l'athlète séparément pour plus de fiabilité
         athlete = authed_client.get_athlete()
         athlete_id_strava = athlete.id
         
+        # Le reste du code utilise cet athlete_id_strava
         activities = list(authed_client.get_activities(limit=50))
         
         today = date.today()
@@ -73,25 +82,15 @@ def strava_handler():
         ytd_distance = float(stats.ytd_ride_totals.distance)
         yearly_summary = {"current": ytd_distance / 1000, "goal": 8000}
         
-        activities_json = [
-            {
-                'name': act.name,
-                'start_date_local': act.start_date_local.isoformat(),
-                'moving_time': str(getattr(act, 'moving_time', '0')),
-                'distance': float(getattr(act, 'distance', 0)),
-                'total_elevation_gain': float(getattr(act, 'total_elevation_gain', 0))
-            } for act in activities[:10]
-        ]
+        activities_json = [{'name': act.name, 'start_date_local': act.start_date_local.isoformat(), 'moving_time': str(getattr(act, 'moving_time', '0')), 'distance': float(getattr(act, 'distance', 0)), 'total_elevation_gain': float(getattr(act, 'total_elevation_gain', 0))} for act in activities[:10]]
         
         latest_activity_map_polyline, elevation_data = None, None
         if activities:
-            if hasattr(activities[0], 'map') and activities[0].map.summary_polyline:
-                latest_activity_map_polyline = activities[0].map.summary_polyline
+            if hasattr(activities[0], 'map') and activities[0].map.summary_polyline: latest_activity_map_polyline = activities[0].map.summary_polyline
             latest_activity_id = getattr(activities[0], 'id', None)
             if latest_activity_id:
                 streams = authed_client.get_activity_streams(latest_activity_id, types=['distance', 'altitude'])
-                if streams and 'distance' in streams and 'altitude' in streams:
-                    elevation_data = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
+                if streams and 'distance' in streams and 'altitude' in streams: elevation_data = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
 
         return jsonify({
             "activities": activities_json,
@@ -102,5 +101,6 @@ def strava_handler():
         })
 
     except Exception as e:
+        import traceback
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
