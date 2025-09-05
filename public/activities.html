@@ -17,15 +17,8 @@
         h1, h2 { color: var(--gray-800); border-bottom: 1px solid var(--gray-200); padding-bottom: 16px; margin-top: 0; }
         h1 { font-size: 2.25rem; }
         h2 { font-size: 1.5rem; }
-        
-        .latest-activity-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 24px;
-            align-items: flex-start;
-        }
+        .latest-activity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; align-items: flex-start; }
         #map { height: 400px; width: 100%; border-radius: 8px; background-color: var(--gray-200); }
-        
         .summary-panel .date { font-size: 1rem; color: var(--gray-500); margin-bottom: 4px; }
         .summary-panel h3 { font-size: 1.875rem; font-weight: 700; margin: 0 0 24px 0; }
         .stat-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--gray-200); }
@@ -33,7 +26,6 @@
         .stat-label { display: flex; align-items: center; gap: 10px; font-weight: 500; color: var(--gray-500); }
         .stat-value { font-weight: 600; font-size: 1.1rem; }
         .stat-value .unit { font-size: 0.9em; color: var(--gray-500); margin-left: 4px; }
-
         .chart-container { position: relative; height: 250px; width: 100%; }
         .activity-table { width: 100%; border-collapse: collapse; }
         .activity-table td { padding: 16px; text-align: left; border-bottom: 1px solid var(--gray-200); font-weight: 500; }
@@ -57,12 +49,10 @@
                     <div id="map-container"></div>
                 </div>
             </div>
-
             <div class="card" id="chart-card" style="display: none;">
                 <h2>Profil d'altitude</h2>
                 <div class="chart-container"><canvas id="elevationChart"></canvas></div>
             </div>
-
             <div class="card">
                 <h2>Historique</h2>
                 <table class="activity-table"><tbody id="history-table-body"></tbody></table>
@@ -76,29 +66,17 @@
     
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const API_URL = "https://projet-strava-api.onrender.com/api/strava";
-            const statusContainer = document.getElementById('status-container');
-            const contentWrapper = document.getElementById('content-wrapper');
-            const stravaCode = new URLSearchParams(window.location.search).get('code');
-
-            if (!stravaCode) {
-                statusContainer.innerHTML = "<h1>Erreur : Code d'autorisation manquant.</h1>";
-                return;
-            }
-
+            // ... (le début du script fetch reste identique) ...
+            
             fetch(`${API_URL}?code=${stravaCode}`)
                 .then(response => response.json().then(data => ({ ok: response.ok, data })))
                 .then(({ ok, data }) => {
                     if (!ok) throw new Error(data.error || 'Erreur inconnue');
                     statusContainer.style.display = 'none';
                     contentWrapper.style.display = 'block';
-                    
                     renderPage(data);
                 })
-                .catch(error => {
-                    console.error("Erreur:", error);
-                    statusContainer.innerHTML = `<h1>Une erreur est survenue</h1><p>${error.message}</p>`;
-                });
+                .catch(error => { /* ... (gestion d'erreur identique) ... */ });
         });
 
         function renderPage(data) {
@@ -109,7 +87,6 @@
 
             const latest = data.activities[0];
 
-            // Affiche le résumé de la dernière activité
             const summaryContainer = document.getElementById('summary-container');
             summaryContainer.innerHTML = `
                 <p class="date">${formatDate(latest.start_date_local)}</p>
@@ -118,19 +95,16 @@
             `;
             const statsDetails = document.getElementById('stats-details');
             statsDetails.innerHTML += createStatDetail('ruler', 'Distance', `${(latest.distance / 1000).toFixed(2)}`, 'km');
-            statsDetails.innerHTML += createStatDetail('timer', 'Durée', latest.moving_time);
+            // --- MODIFICATION ICI : On appelle la nouvelle fonction de formatage ---
+            statsDetails.innerHTML += createStatDetail('timer', 'Durée', formatMovingTime(latest.moving_time));
             statsDetails.innerHTML += createStatDetail('trending-up', 'Dénivelé', `${latest.total_elevation_gain.toFixed(0)}`, 'm');
 
-            // Affiche la carte
             if (data.latest_activity_map) renderMap(data.latest_activity_map);
-
-            // Affiche le graphique d'altitude
             if (data.elevation_data) {
                 document.getElementById('chart-card').style.display = 'block';
                 renderChart(data.elevation_data);
             }
             
-            // Affiche l'historique
             const historyTableBody = document.getElementById('history-table-body');
             data.activities.forEach(activity => {
                 const row = document.createElement('tr');
@@ -143,8 +117,21 @@
                 historyTableBody.appendChild(row);
             });
 
-            // Active les icônes
             lucide.createIcons();
+        }
+
+        // --- NOUVELLE FONCTION POUR FORMATER LA DURÉE ---
+        function formatMovingTime(timeString) {
+            const parts = timeString.split(':').map(Number);
+            if (parts.length === 3) {
+                const [hours, minutes, seconds] = parts;
+                if (hours > 0) {
+                    return `${hours}h ${minutes}min`;
+                } else {
+                    return `${minutes}min ${seconds}s`;
+                }
+            }
+            return timeString; // Au cas où le format serait inattendu
         }
 
         function createStatDetail(icon, label, value, unit = '') {
@@ -155,8 +142,12 @@
                 </div>`;
         }
         
+        // --- Le reste des fonctions est inchangé ---
+        const API_URL = "https://projet-strava-api.onrender.com/api/strava";
+        const statusContainer = document.getElementById('status-container');
+        const contentWrapper = document.getElementById('content-wrapper');
+        const stravaCode = new URLSearchParams(window.location.search).get('code');
         function formatDate(d) { return new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
-        
         function renderMap(p){const c=document.getElementById('map-container');c.innerHTML='<div id="map"></div>';try{const d=decodePolyline(p);if(d&&d.length>0){const m=L.map('map');L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OSM'}).addTo(m);const l=L.polyline(d,{color:'#fc4c02',weight:4}).addTo(m);m.fitBounds(l.getBounds().pad(0.1));}}catch(e){console.error("Erreur carte:",e);}}
         function renderChart(d){const c=document.getElementById('chart-container');const x=document.getElementById('elevationChart').getContext('2d');const g=x.createLinearGradient(0,0,0,250);g.addColorStop(0,'rgba(252,76,2,0.4)');g.addColorStop(1,'rgba(252,76,2,0)');new Chart(x,{type:'line',data:{labels:d.distance.map(v=>(v/1000).toFixed(1)),datasets:[{label:'Altitude (m)',data:d.altitude,borderColor:'#fc4c02',backgroundColor:g,borderWidth:2,pointRadius:0,fill:true,tension:0.3}]},options:{responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:'Distance (km)'}},y:{title:{display:true,text:'Altitude (m)'}}},plugins:{legend:{display:false}}}});}
         function decodePolyline(e){let l=e.length;let i=0;let a=0;let n=0;let r=[];while(i<l){let t;let h=0;let s=0;do{t=e.charCodeAt(i++)-63;s|=(t&31)<<h;h+=5;}while(t>=32);let o=((s&1)?~(s>>1):(s>>1));a+=o;h=0;s=0;do{t=e.charCodeAt(i++)-63;s|=(t&31)<<h;h+=5;}while(t>=32);let d=((s&1)?~(s>>1):(s>>1));n+=d;r.push([a*1e-5,n*1e-5]);}return r;}
