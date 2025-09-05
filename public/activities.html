@@ -14,7 +14,6 @@
         h1, h2 { color: var(--gray-800); margin-top: 0; }
         h1 { font-size: 2.25rem; }
         h2 { font-size: 1.5rem; padding-bottom: 16px; border-bottom: 1px solid var(--gray-200); }
-
         .dashboard-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 20px; }
         .goals-container { display: flex; gap: 24px; }
         .goal-stat { display: flex; align-items: center; gap: 16px; }
@@ -24,7 +23,6 @@
         .goal-details h3 { margin: 0; font-size: 1rem; color: var(--gray-500); font-weight: 500; text-transform: uppercase; }
         .goal-details p { margin: 4px 0 0; font-size: 1.2rem; font-weight: 600; }
         .goal-details .sub { font-size: 0.9rem; color: var(--gray-500); }
-        
         .latest-activity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; align-items: flex-start; }
         #map { height: 400px; width: 100%; border-radius: 8px; background-color: var(--gray-200); }
         .summary-panel .date { font-size: 1rem; color: var(--gray-500); margin-bottom: 4px; }
@@ -34,7 +32,6 @@
         .stat-label { display: flex; align-items: center; gap: 10px; font-weight: 500; color: var(--gray-500); }
         .stat-value { font-weight: 600; font-size: 1.1rem; }
         .stat-value .unit { font-size: 0.9em; color: var(--gray-500); margin-left: 4px; }
-        
         .chart-container { position: relative; height: 250px; width: 100%; }
         .activity-table { width: 100%; border-collapse: collapse; }
         .activity-table td { padding: 16px; text-align: left; border-bottom: 1px solid var(--gray-200); font-weight: 500; }
@@ -74,6 +71,7 @@
     
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+            // ... (logique fetch inchangée) ...
             const API_URL = "https://projet-strava-api.onrender.com/api/strava";
             const statusContainer = document.getElementById('status-container');
             const contentWrapper = document.getElementById('content-wrapper');
@@ -87,7 +85,6 @@
                     if (!ok) throw new Error(data.error || 'Erreur inconnue');
                     statusContainer.style.display = 'none';
                     contentWrapper.style.display = 'block';
-                    
                     renderPage(data);
                 })
                 .catch(error => {
@@ -103,23 +100,6 @@
             lucide.createIcons();
         }
 
-        function renderGoals(goals) {
-            if (!goals) return;
-            const container = document.getElementById('goals-container');
-            container.innerHTML = ''; // On vide le conteneur avant de le remplir
-
-            if (goals.weekly) {
-                container.innerHTML += createGoalStat('weeklyGoal', 'Objectif Semaine', goals.weekly);
-            }
-            if (goals.yearly) {
-                container.innerHTML += createGoalStat('yearlyGoal', 'Objectif Annuel', goals.yearly);
-            }
-            
-            // On dessine les graphiques APRES avoir inséré le HTML
-            if (goals.weekly) renderGoalChart('weeklyGoalChart', goals.weekly);
-            if (goals.yearly) renderGoalChart('yearlyGoalChart', goals.yearly);
-        }
-        
         function renderLatestActivity(activities, mapData, chartData) {
             const summaryTitle = document.getElementById('latest-activity-summary');
             const detailsContainer = document.getElementById('summary-details-container');
@@ -127,11 +107,15 @@
 
             const latest = activities[0];
             summaryTitle.innerHTML = `<h2>Dernière Activité</h2>`;
+            
+            // On appelle la fonction de formatage pour la durée
+            const formattedTime = formatMovingTime(latest.moving_time);
+
             detailsContainer.innerHTML = `
                 <p class="date">${formatDate(latest.start_date_local)}</p>
                 <h3>${latest.name}</h3>
                 ${createStatDetail('ruler', 'Distance', `${(latest.distance / 1000).toFixed(2)}`, 'km')}
-                ${createStatDetail('timer', 'Durée', formatMovingTime(latest.moving_time))}
+                ${createStatDetail('timer', 'Durée', formattedTime)}
                 ${createStatDetail('trending-up', 'Dénivelé', `${latest.total_elevation_gain.toFixed(0)}`, 'm')}
             `;
 
@@ -141,36 +125,44 @@
                 renderChart(chartData);
             }
         }
-
-        function renderHistory(activities) { /* ... (inchangé) ... */ }
-        function createGoalStat(idPrefix, title, data) {
-            const remaining = (data.goal - data.current).toFixed(0);
-            const percentage = data.goal > 0 ? ((data.current / data.goal) * 100).toFixed(0) : 0;
-            return `<div class="goal-stat"><div class="goal-chart-container"><canvas id="${idPrefix}Chart"></canvas><div class="goal-percentage">${percentage}%</div></div><div class="goal-details"><h3>${title}</h3><p>${remaining}km à parcourir</p><p class="sub">${data.current.toFixed(0)}km / ${data.goal}km</p></div></div>`;
-        }
-        function renderGoalChart(canvasId,data){ /* ... (inchangé) ... */ }
-        function createStatDetail(icon, label, value, unit = '') { return `<div class="stat-item"><div class="stat-label"><i data-lucide="${icon}"></i>${label}</div><div class="stat-value">${value} <span class="unit">${unit}</span></div></div>`; }
-        function formatDate(d) { return new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
         
-        // --- CORRECTION : Ajout de la fonction pour formater la durée ---
-        function formatMovingTime(timeString) {
-            const parts = timeString.split(':').map(Number);
-            if (parts.length === 3) {
-                const [hours, minutes, seconds] = parts;
-                if (hours > 0) {
-                    return `${hours}h ${minutes}min`;
-                } else {
+        // --- MODIFICATION ICI : Nouvelle fonction de formatage plus robuste ---
+        function formatMovingTime(timeValue) {
+            // Si c'est un string comme "H:MM:SS", on le traite
+            if (typeof timeValue === 'string' && timeValue.includes(':')) {
+                const parts = timeValue.split(':').map(Number);
+                if (parts.length === 3) {
+                    const [hours, minutes, seconds] = parts;
+                    if (hours > 0) return `${hours}h ${minutes}min`;
                     return `${minutes}min ${seconds}s`;
                 }
             }
-            return timeString; // Fallback au cas où le format serait inattendu
+            
+            // Sinon, on traite la valeur comme un nombre total de secondes (ex: 3117)
+            const totalSeconds = parseInt(timeValue, 10);
+            if (isNaN(totalSeconds)) return timeValue; // Sécurité
+
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+
+            if (hours > 0) {
+                return `${hours}h ${minutes}min`;
+            } else {
+                return `${minutes}min ${seconds}s`;
+            }
         }
         
+        // --- Le reste des fonctions est inchangé ---
+        function renderGoals(goals) { if (!goals) return; const container = document.getElementById('goals-container'); container.innerHTML = ''; if (goals.weekly) { container.innerHTML += createGoalStat('weeklyGoal', 'Objectif Semaine', goals.weekly); } if (goals.yearly) { container.innerHTML += createGoalStat('yearlyGoal', 'Objectif Annuel', goals.yearly); } if (goals.weekly) renderGoalChart('weeklyGoalChart', goals.weekly); if (goals.yearly) renderGoalChart('yearlyGoalChart', goals.yearly); }
+        function createGoalStat(idPrefix, title, data) { const remaining = (data.goal - data.current).toFixed(0); const percentage = data.goal > 0 ? ((data.current / data.goal) * 100).toFixed(0) : 0; return `<div class="goal-stat"><div class="goal-chart-container"><canvas id="${idPrefix}Chart"></canvas><div class="goal-percentage">${percentage}%</div></div><div class="goal-details"><h3>${title}</h3><p>${remaining}km à parcourir</p><p class="sub">${data.current.toFixed(0)}km / ${data.goal}km</p></div></div>`; }
+        function renderGoalChart(canvasId,data){const ctx=document.getElementById(canvasId).getContext("2d");new Chart(ctx,{type:"doughnut",data:{datasets:[{data:[data.current,Math.max(0,data.goal-data.current)],backgroundColor:["#fc4c02","#f3f4f6"],borderWidth:0,borderRadius:5}]},options:{responsive:!0,maintainAspectRatio:!1,cutout:"75%",plugins:{legend:{display:!1},tooltip:{enabled:!1}}}});}
+        function createStatDetail(icon, label, value, unit = '') { return `<div class="stat-item"><div class="stat-label"><i data-lucide="${icon}"></i>${label}</div><div class="stat-value">${value} <span class="unit">${unit}</span></div></div>`; }
+        function formatDate(d) { return new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
         function renderMap(p){const c=document.getElementById("map-container");c.innerHTML='<div id="map"></div>';try{const d=decodePolyline(p);if(d&&d.length>0){const m=L.map("map");L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:'&copy; OSM'}).addTo(m);const l=L.polyline(d,{color:"#fc4c02",weight:4}).addTo(m);m.fitBounds(l.getBounds().pad(.1))}}catch(e){console.error("Erreur carte:",e)}}
         function renderChart(d){const c=document.getElementById("chart-container");c.innerHTML='<div class="chart-container"><canvas id="elevationChart"></canvas></div>';const x=document.getElementById("elevationChart").getContext("2d");const g=x.createLinearGradient(0,0,0,250);g.addColorStop(0,"rgba(252,76,2,0.4)"),g.addColorStop(1,"rgba(252,76,2,0)");new Chart(x,{type:"line",data:{labels:d.distance.map(v=>(v/1000).toFixed(1)),datasets:[{label:"Altitude (m)",data:d.altitude,borderColor:"#fc4c02",backgroundColor:g,borderWidth:2,pointRadius:0,fill:!0,tension:.3}]},options:{responsive:!0,maintainAspectRatio:!1,scales:{x:{title:{display:true,text:"Distance (km)"}},y:{title:{display:true,text:"Altitude (m)"}}},plugins:{legend:{display:!1}}}});}
         function decodePolyline(e){let l=e.length,i=0,a=0,n=0,r=[];while(i<l){let t,h=0,s=0;do{t=e.charCodeAt(i++)-63,s|=(t&31)<<h,h+=5}while(t>=32);let o=s&1?~(s>>1):s>>1;a+=o,h=0,s=0;do{t=e.charCodeAt(i++)-63,s|=(t&31)<<h,h+=5}while(t>=32);let d=s&1?~(s>>1):s>>1;n+=d,r.push([a*1e-5,n*1e-5])}return r}
         function renderHistory(activities){const h=document.getElementById("history-table-body");if(!activities||!activities.length)return;activities.forEach(a=>{const r=document.createElement("tr");r.innerHTML=`<td class="strava-orange">${a.name}</td><td>${(a.distance/1e3).toFixed(2)} km</td><td>${new Date(a.start_date_local).toLocaleDateString("fr-FR")}</td>`,h.appendChild(r)})}
-        function renderGoalChart(canvasId,data){const ctx=document.getElementById(canvasId).getContext("2d");new Chart(ctx,{type:"doughnut",data:{datasets:[{data:[data.current,Math.max(0,data.goal-data.current)],backgroundColor:["#fc4c02","#f3f4f6"],borderWidth:0,borderRadius:5}]},options:{responsive:!0,maintainAspectRatio:!1,cutout:"75%",plugins:{legend:{display:!1},tooltip:{enabled:!1}}}});}
     </script>
 </body>
 </html>
