@@ -11,15 +11,6 @@ from stravalib.client import Client
 app = Flask(__name__)
 CORS(app)
 
-def get_zwift_world(activity_name):
-    name_lower = activity_name.lower()
-    known_worlds = ['watopia', 'richmond', 'london', 'new york', 'innsbruck', 'yorkshire', 'crit city', 'france', 'paris', 'makuri islands', 'scotland']
-    for world in known_worlds:
-        if world in name_lower:
-            if world == 'yorkshire' and 'new york' in name_lower: continue
-            return world.replace(' ', '')
-    return None
-
 def get_fitness_data():
     try:
         athlete_id_icu = os.environ.get("INTERVALS_ATHLETE_ID")
@@ -83,7 +74,6 @@ def strava_handler():
                 'moving_time': str(getattr(activity, 'moving_time', '0')),
                 'distance': float(getattr(activity, 'distance', 0)),
                 'total_elevation_gain': float(getattr(activity, 'total_elevation_gain', 0)),
-                'zwift_world': get_zwift_world(activity.name),
                 'map_polyline': map_polyline,
                 'elevation_data': elevation_data
             })
