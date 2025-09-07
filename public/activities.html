@@ -62,7 +62,7 @@
     
     <script>
         let allActivitiesData = [];
-        let weeklyGoalChart = null, yearlyGoalChart = null, formChart = null, elevationChart = null;
+        let weeklyGoalChart, yearlyGoalChart, formChart, elevationChart;
 
         document.addEventListener('DOMContentLoaded', () => {
             const API_URL = "https://projet-strava-api.onrender.com/api/strava";
@@ -91,8 +91,8 @@
             lucide.createIcons();
         }
 
-        // --- DÉBUT DES FONCTIONS HELPER QUI MANQUAIENT ---
-        
+        // --- DÉBUT DES FONCTIONS HELPER QUI ÉTAIENT MANQUANTES ---
+
         function createGoalStat(idPrefix, title, data) {
             const remaining = (data.goal - data.current).toFixed(0);
             const percentage = data.goal > 0 ? ((data.current / data.goal) * 100).toFixed(0) : 0;
@@ -100,7 +100,7 @@
         }
         
         function createSummaryCard(icon, title, value, valueClass = '') {
-            return `<div class="summary-card"><h3 class="flex items-center justify-center gap-2"><i data-lucide="${icon}" class="w-4 h-4 text-gray-400"></i>${title}</h3><p class="${valueClass}">${value ?? '-'}</p></div>`;
+            return `<div class="card summary-card"><h3 class="flex items-center justify-center gap-2"><i data-lucide="${icon}" class="w-4 h-4 text-gray-400"></i>${title}</h3><p class="${valueClass}">${value ?? '-'}</p></div>`;
         }
 
         function createStatDetail(icon, label, value, unit = '') {
@@ -112,29 +112,25 @@
         }
 
         function formatMovingTime(timeValue) {
-            if (typeof timeValue === 'string' && timeValue.includes(':')) {
-                const parts = timeValue.split(':').map(Number);
-                if (parts.length === 3) {
-                    const [hours, minutes, seconds] = parts;
-                    if (hours > 0) return `${hours}h ${minutes}min`;
-                    return `${minutes}min ${seconds}s`;
-                }
+            const parts = timeValue.split(':').map(Number);
+            if (parts.length === 3) {
+                const [h, m, s] = parts;
+                if (h > 0) return `${h}h ${m}min`;
+                return `${m}min ${s}s`;
             }
             const totalSeconds = parseInt(timeValue, 10);
             if (isNaN(totalSeconds)) return timeValue;
-            const hours = Math.floor(totalSeconds / 3600);
-            const minutes = Math.floor((totalSeconds % 3600) / 60);
-            const seconds = totalSeconds % 60;
-            if (hours > 0) {
-                return `${hours}h ${minutes}min`;
-            } else {
-                return `${minutes}min ${seconds}s`;
-            }
+            const h = Math.floor(totalSeconds / 3600);
+            const m = Math.floor((totalSeconds % 3600) / 60);
+            const s = totalSeconds % 60;
+            if (h > 0) return `${h}h ${m}min`;
+            return `${m}min ${s}s`;
         }
         
         function decodePolyline(e){let l=e.length,i=0,a=0,n=0,r=[];while(i<l){let t,h=0,s=0;do{t=e.charCodeAt(i++)-63,s|=(t&31)<<h,h+=5}while(t>=32);let o=s&1?~(s>>1):s>>1;a+=o,h=0,s=0;do{t=e.charCodeAt(i++)-63,s|=(t&31)<<h,h+=5}while(t>=32);let d=s&1?~(s>>1):s>>1;n+=d,r.push([a*1e-5,n*1e-5])}return r}
-
+        
         // --- FIN DES FONCTIONS HELPER ---
+
 
         function renderGoals(goals) {
             if (!goals) return;
@@ -211,6 +207,7 @@
             const getFormColor = (value) => { if (value === null || isNaN(value)) return 'rgba(107, 114, 128, 0.5)'; if (value > 5) return '#3b82f6'; if (value > -10) return '#22c55e'; if (value > -25) return '#6b7280'; return '#ef4444'; };
             formChart = new Chart(ctx, { type: 'line', data: { labels: labels, datasets: [{ label: 'Forme (TSB)', data: tsbData, borderWidth: 2.5, tension: 0.4, pointRadius: 0, segment: { borderColor: ctx => getFormColor(ctx.p1.raw) } }] }, options: { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'time', time: { unit: 'week' } }, y: { title: { display: true, text: 'Forme (TSB)' } } }, plugins: { legend: { display: false }, annotation: { annotations: { highRisk: { type: 'box', yMin: -Infinity, yMax: -25, backgroundColor: 'rgba(239, 68, 68, 0.05)', borderColor: 'transparent' }, greyZone: { type: 'box', yMin: -25, yMax: -10, backgroundColor: 'rgba(107, 114, 128, 0.05)', borderColor: 'transparent' }, optimal: { type: 'box', yMin: -10, yMax: 5, backgroundColor: 'rgba(34, 197, 94, 0.05)', borderColor: 'transparent' }, fresh: { type: 'box', yMin: 5, yMax: Infinity, backgroundColor: 'rgba(59, 130, 246, 0.05)', borderColor: 'transparent' } } } } } });
         }
+        function renderMap(encodedPolyline, zwiftWorld = null){const mapContainer=document.getElementById("map-container");mapContainer.innerHTML='<div id="map"></div>';try{const map=L.map("map");if(zwiftWorld){L.tileLayer("https://api.zwifthacks.com/zwiftmap/tiles/{world}/{z}/{x}/{y}.png",{world:zwiftWorld,attribution:'&copy; <a href="https://zwiftmap.com">ZwiftMap</a>'}).addTo(map)}else{L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:'&copy; OSM'}).addTo(map)}const decodedPath=decodePolyline(encodedPolyline);if(decodedPath&&decodedPath.length>0){const polyline=L.polyline(decodedPath,{color:"#fc5200",weight:4}).addTo(map);map.fitBounds(polyline.getBounds().pad(.1))}}catch(e){console.error("Erreur carte:",e)}}
     </script>
 </body>
 </html>
