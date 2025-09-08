@@ -34,7 +34,7 @@
         .stat-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--gray-200); }
         .stat-label { display: flex; align-items: center; gap: 10px; font-weight: 500; color: var(--gray-500); }
         .stat-value { font-weight: 600; font-size: 1.1rem; }
-        .chart-container { position: relative; height: 300px; width: 100%; }
+        .chart-container { position: relative; height: 250px; width: 100%; }
         .activity-table { width: 100%; border-collapse: collapse; }
         .activity-table tbody tr { cursor: pointer; }
         .activity-table tbody tr:hover { background-color: #f9fafb; }
@@ -48,7 +48,7 @@
         <div id="status-container" class="card" style="text-align: center; font-size: 1.2em; font-weight: bold; padding: 40px;">Chargement des données...</div>
         <div id="content-wrapper" style="display: none;">
             <div class="dashboard-header"><h1 >Mon Tableau de Bord</h1><div class="goals-container" id="goals-container"></div></div>
-            <div class="card"><h2 >Condition Physique</h2><div class="fitness-section"><div id="fitness-summary-cards" class="fitness-stats-cards"></div><div id="charts-column"><div class="chart-container mb-4"><canvas id="fitnessChart"></canvas></div><div class="chart-container"><canvas id="formChart"></canvas></div></div></div></div>
+            <div class="card"><h2 >Condition Physique</h2><div class="fitness-section"><div id="fitness-summary-cards" class="fitness-stats-cards"></div><div id="charts-column"><div class="chart-container mb-4"><canvas id="fitnessFatigueChart"></canvas></div><div class="chart-container"><canvas id="formChart"></canvas></div></div></div></div>
             <div class="card"><h2 id="latest-activity-title">Dernière Activité</h2><div class="latest-activity-grid"><div id="summary-details-container" class="summary-panel"></div><div id="map-container"></div></div><div id="elevation-chart-card" style="display: none;" class="mt-6"><div class="chart-container" style="height: 200px;"><canvas id="elevationChart"></canvas></div></div></div>
             <div class="card"><h2>Historique</h2><table class="activity-table"><tbody id="history-table-body"></tbody></table></div>
         </div>
@@ -62,7 +62,7 @@
     
     <script>
         let allActivitiesData = [];
-        let weeklyGoalChart, yearlyGoalChart, formChart, elevationChart, fitnessChart;
+        let weeklyGoalChart, yearlyGoalChart, formChart, elevationChart, fitnessFatigueChart;
 
         document.addEventListener('DOMContentLoaded', () => {
             const API_URL = "https://projet-strava-api.onrender.com/api/strava";
@@ -87,7 +87,7 @@
             renderFitnessSummary(data.fitness_summary);
             renderActivityDetail(data.activities, selectedIndex);
             if (data.form_chart_data) {
-                renderFitnessChart(data.form_chart_data);
+                renderFitnessFatigueChart(data.form_chart_data);
                 renderFormChart(data.form_chart_data);
             }
             renderHistory(data.activities, selectedIndex);
@@ -96,7 +96,7 @@
 
         function renderGoals(goals) { if (!goals) return; const container = document.getElementById('goals-container'); container.innerHTML = ''; if (goals.weekly) { container.innerHTML += createGoalStat('weeklyGoal', 'Objectif Semaine', goals.weekly); } if (goals.yearly) { container.innerHTML += createGoalStat('yearlyGoal', 'Objectif Annuel', goals.yearly); } if (goals.weekly) weeklyGoalChart = renderGoalChart('weeklyGoalChart', goals.weekly, weeklyGoalChart); if (goals.yearly) yearlyGoalChart = renderGoalChart('yearlyGoalChart', goals.yearly, yearlyGoalChart); }
         
-        function renderFitnessSummary(summary) { const container = document.getElementById('fitness-summary-cards'); if (!summary) return; const getFormClass = (form) => { if (form==null) return ''; if (form > 5) return 'text-blue-500'; if (form > -10) return 'text-green-500'; if (form > -25) return 'text-gray-500'; return 'text-red-500'; }; container.innerHTML = `${createSummaryCard('trending-up', 'Fitness (CTL)', summary.fitness)}${createSummaryCard('flame', 'Fatigue (ATL)', summary.fatigue)}${createSummaryCard('shield-check', 'Forme (TSB)', summary.form, `font-bold ${getFormClass(summary.form)}`)}${createSummaryCard('lungs', 'VO2max Estimée', summary.vo2max)}`;}
+        function renderFitnessSummary(summary) { const container = document.getElementById('fitness-summary-cards'); if (!summary) return; const getFormClass = (form) => { if (form==null) return ''; if (form > 5) return 'text-blue-500'; if (form > -10) return 'text-green-500'; if (form > -25) return 'text-gray-500'; return 'text-red-500'; }; container.innerHTML = `${createSummaryCard('trending-up', 'Fitness (CTL)', summary.fitness)}${createSummaryCard('battery-low', 'Fatigue (ATL)', summary.fatigue)}${createSummaryCard('activity', 'Forme (TSB)', summary.form, `font-bold ${getFormClass(summary.form)}`)}${createSummaryCard('zap', 'VO2max Estimée', summary.vo2max)}`;}
         
         function renderActivityDetail(activities, index) { const title = document.getElementById('latest-activity-title'); const detailsContainer = document.getElementById('summary-details-container'); if (!activities || !activities.length) return; const activity = activities[index]; title.textContent = index === 0 ? "Dernière Activité" : "Détail de l'Activité"; detailsContainer.innerHTML = `<p class="date">${formatDate(activity.start_date_local)}</p><h3>${activity.name}</h3>${createStatDetail('ruler','Distance',`${(activity.distance/1000).toFixed(2)}`,'km')}${createStatDetail('timer','Durée',formatMovingTime(activity.moving_time))}${createStatDetail('trending-up','Dénivelé',`${activity.total_elevation_gain.toFixed(0)}`,'m')}`; renderMap(activity.map_polyline, activity.zwift_world); const chartCard = document.getElementById('elevation-chart-card'); if (activity.elevation_data) { chartCard.style.display = 'block'; renderChart(activity.elevation_data, 'elevationChart'); } else { chartCard.style.display = 'none'; } }
         
@@ -120,18 +120,22 @@
         
         function renderChart(d, canvasId){if(elevationChart){elevationChart.destroy()}const x=document.getElementById(canvasId).getContext("2d");const g=x.createLinearGradient(0,0,0,250);g.addColorStop(0,"rgba(252,76,2,0.4)"),g.addColorStop(1,"rgba(252,76,2,0)");elevationChart=new Chart(x,{type:"line",data:{labels:d.distance.map(v=>(v/1000).toFixed(1)),datasets:[{label:"Altitude (m)",data:d.altitude,borderColor:"#fc5200",backgroundColor:g,borderWidth:2,pointRadius:0,fill:!0,tension:.3}]},options:{responsive:!0,maintainAspectRatio:!1,scales:{x:{title:{display:true,text:"Distance (km)"}},y:{title:{display:true,text:"Altitude (m)"}}},plugins:{legend:{display:!1}}}});}
         
-        function renderFitnessChart(data) {
-            if (fitnessChart) { fitnessChart.destroy(); }
-            const ctx = document.getElementById('fitnessChart').getContext('2d');
+        function renderFitnessFatigueChart(data) {
+            if (fitnessFatigueChart) { fitnessFatigueChart.destroy(); }
+            const ctx = document.getElementById('fitnessFatigueChart').getContext('2d');
             const labels = data.map(d => new Date(d.id));
             const ctlData = data.map(d => d.ctl);
-            fitnessChart = new Chart(ctx, {
+            const atlData = data.map(d => d.atl);
+            fitnessFatigueChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [ { label: 'Fitness (CTL)', data: ctlData, borderColor: 'rgba(59, 130, 246, 0.8)', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderWidth: 2.5, tension: 0.4, fill: true, pointRadius: 0 } ]
+                    datasets: [
+                        { label: 'Fitness', data: ctlData, borderColor: 'rgba(119, 119, 119, 0.8)', backgroundColor: 'rgba(119, 119, 119, 0.1)', borderWidth: 1.5, tension: 0.4, fill: true, pointRadius: 0, },
+                        { label: 'Fatigue', data: atlData, borderColor: 'rgba(239, 68, 68, 0)', backgroundColor: 'rgba(239, 68, 68, 0)', borderWidth: 1.5, tension: 0.4, fill: true, pointRadius: 0, }
+                    ]
                 },
-                options: { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: false } }, y: { title: { display: true, text: 'Charge d\'entraînement (CTL)' } } }, plugins: { legend: { display: false } } }
+                options: { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'time', time: { unit: 'week' }, grid: { display: false } }, y: { title: { display: true, text: 'Charge d\'entraînement' } } }, plugins: { legend: { position: 'bottom', labels: { usePointStyle: true } } } }
             });
         }
 
@@ -147,4 +151,4 @@
         function decodePolyline(e){let l=e.length,i=0,a=0,n=0,r=[];while(i<l){let t,h=0,s=0;do{t=e.charCodeAt(i++)-63,s|=(t&31)<<h,h+=5}while(t>=32);let o=s&1?~(s>>1):s>>1;a+=o,h=0,s=0;do{t=e.charCodeAt(i++)-63,s|=(t&31)<<h,h+=5}while(t>=32);let d=s&1?~(s>>1):s>>1;n+=d,r.push([a*1e-5,n*1e-5])}return r}
     </script>
 </body>
-</html>
+</html>"

@@ -1,4 +1,4 @@
-# Fichier: app.py (Version finale et complète)
+# Fichier: app.py (Version avec 6 mois d'historique de forme)
 
 import os
 import requests
@@ -20,9 +20,9 @@ def get_fitness_data():
         if not all([athlete_id_icu, api_key, pma]): return None, None
         
         today = date.today()
-        # MODIFICATION : On récupère 180 jours (6 mois) de données
-        six_months_ago = today - timedelta(days=180)
-        url = f"https://intervals.icu/api/v1/athlete/{athlete_id_icu}/wellness?oldest={six_months_ago}&newest={today}"
+        # --- MODIFICATION ICI : On passe de 90 à 180 jours ---
+        history_start_date = today - timedelta(days=180)
+        url = f"https://intervals.icu/api/v1/athlete/{athlete_id_icu}/wellness?oldest={history_start_date}&newest={today}"
         
         response = requests.get(url, auth=('API_KEY', api_key))
         response.raise_for_status()
@@ -74,21 +74,8 @@ def strava_handler():
                 streams = authed_client.get_activity_streams(activity_id, types=['distance', 'altitude'])
                 if streams and 'distance' in streams and 'altitude' in streams: elevation_data = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
             
-            activities_json.append({
-                'name': activity.name, 'start_date_local': activity.start_date_local.isoformat(),
-                'moving_time': str(getattr(activity, 'moving_time', '0')),
-                'distance': float(getattr(activity, 'distance', 0)),
-                'total_elevation_gain': float(getattr(activity, 'total_elevation_gain', 0)),
-                'map_polyline': map_polyline,
-                'elevation_data': elevation_data
-            })
-
-        return jsonify({
-            "activities": activities_json,
-            "goals": { "weekly": weekly_summary, "yearly": yearly_summary },
-            "fitness_summary": fitness_summary,
-            "form_chart_data": form_chart_data
-        })
+            activities_json.append({'name': activity.name, 'start_date_local': activity.start_date_local.isoformat(),'moving_time': str(getattr(activity, 'moving_time', '0')),'distance': float(getattr(activity, 'distance', 0)),'total_elevation_gain': float(getattr(activity, 'total_elevation_gain', 0)),'map_polyline': map_polyline,'elevation_data': elevation_data})
+        return jsonify({"activities": activities_json,"goals": { "weekly": weekly_summary, "yearly": yearly_summary },"fitness_summary": fitness_summary,"form_chart_data": form_chart_data})
     except Exception as e:
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
