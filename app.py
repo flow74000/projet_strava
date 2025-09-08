@@ -3,7 +3,7 @@
 import os
 import requests
 import traceback
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from stravalib.client import Client
@@ -18,13 +18,18 @@ def get_fitness_data():
         pma = float(os.environ.get("PMA_WATTS", 0))
         default_weight = float(os.environ.get("DEFAULT_WEIGHT", 70))
         if not all([athlete_id_icu, api_key, pma]): return None, None
+        
         today = date.today()
-        ninety_days_ago = today - timedelta(days=90)
-        url = f"https://intervals.icu/api/v1/athlete/{athlete_id_icu}/wellness?oldest={ninety_days_ago}&newest={today}"
+        # MODIFICATION : On récupère 180 jours (6 mois) de données
+        six_months_ago = today - timedelta(days=180)
+        url = f"https://intervals.icu/api/v1/athlete/{athlete_id_icu}/wellness?oldest={six_months_ago}&newest={today}"
+        
         response = requests.get(url, auth=('API_KEY', api_key))
         response.raise_for_status()
         wellness_data = response.json()
+        
         if not wellness_data: return None, None
+
         wellness_data.sort(key=lambda x: x['id'], reverse=True)
         latest_data = wellness_data[0]
         last_known_weight = next((entry.get('weight') for entry in wellness_data if entry.get('weight') is not None), default_weight)
