@@ -97,7 +97,7 @@
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [ { label: 'Fitness (CTL)', data: ctlData, borderColor: 'rgba(59, 130, 246, 0.8)', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderWidth: 2.5, tension: 0.4, fill: true, pointRadius: 0 } ]
+                    datasets: [ { label: 'Fitness', data: ctlData, borderColor: 'rgba(252, 76, 2, 0.8)', backgroundColor: 'rgba(252, 76, 2, 0.1)', borderWidth: 2.5, tension: 0.4, fill: true, pointRadius: 0 } ]
                 },
                 options: { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: false } }, y: { title: { display: true, text: 'Charge d\'entraînement (CTL)' } } }, plugins: { legend: { display: false } } }
             });
@@ -114,7 +114,7 @@
                 data: {
                     labels: labels,
                     datasets: [{
-                        label: 'Forme (TSB)',
+                        label: 'Forme',
                         data: tsbData,
                         borderColor: 'rgb(119, 119, 119)', // Couleur grise
                         borderWidth: 2.5,
@@ -129,10 +129,10 @@
                         legend: { display: false },
                         annotation: { // Les zones de couleur sont conservées
                             annotations: {
-                                highRisk: { type: 'box', yMin: -Infinity, yMax: -30, backgroundColor: 'rgba(239, 68, 68, 0.1)', borderColor: 'transparent' },
-                                greyZone: { type: 'box', yMin: -30, yMax: -10, backgroundColor: 'rgba(107, 114, 128, 0.1)', borderColor: 'transparent' },
-                                optimal: { type: 'box', yMin: -10, yMax: 5, backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'transparent' },
-                                fresh: { type: 'box', yMin: 5, yMax: Infinity, backgroundColor: 'rgba(59, 130, 246, 0.1)', borderColor: 'transparent' }
+                                highRisk: { type: 'box', yMin: -Infinity, yMax: -30, backgroundColor: 'rgba(239, 68, 68, 0.4)', borderColor: 'transparent' },
+                                greyZone: { type: 'box', yMin: -30, yMax: -10, backgroundColor: 'rgba(107, 114, 128, 0.4)', borderColor: 'transparent' },
+                                optimal: { type: 'box', yMin: -10, yMax: 5, backgroundColor: 'rgba(34, 197, 94, 0.4)', borderColor: 'transparent' },
+                                fresh: { type: 'box', yMin: 5, yMax: Infinity, backgroundColor: 'rgba(59, 130, 246, 0.4)', borderColor: 'transparent' }
                             }
                         }
                     }
@@ -142,7 +142,7 @@
         
         // Le reste du code JavaScript est complet et fonctionnel
         function renderGoals(goals) { if (!goals) return; const container = document.getElementById('goals-container'); container.innerHTML = ''; if (goals.weekly) { container.innerHTML += createGoalStat('weeklyGoal', 'Objectif Semaine', goals.weekly); } if (goals.yearly) { container.innerHTML += createGoalStat('yearlyGoal', 'Objectif Annuel', goals.yearly); } if (goals.weekly) weeklyGoalChart = renderGoalChart('weeklyGoalChart', goals.weekly, weeklyGoalChart); if (goals.yearly) yearlyGoalChart = renderGoalChart('yearlyGoalChart', goals.yearly, yearlyGoalChart); }
-        function renderFitnessSummary(summary) { const container = document.getElementById('fitness-summary-cards'); if (!summary) return; const getFormClass = (form) => { if (form==null) return ''; if (form > 5) return 'text-blue-500'; if (form > -10) return 'text-green-500'; if (form > -25) return 'text-gray-500'; return 'text-red-500'; }; container.innerHTML = `${createSummaryCard('trending-up', 'Fitness (CTL)', summary.fitness)}${createSummaryCard('flame', 'Fatigue (ATL)', summary.fatigue)}${createSummaryCard('shield-check', 'Forme (TSB)', summary.form, `font-bold ${getFormClass(summary.form)}`)}${createSummaryCard('lungs', 'VO2max Estimée', summary.vo2max)}`;}
+        function renderFitnessSummary(summary) { const container = document.getElementById('fitness-summary-cards'); if (!summary) return; const getFormClass = (form) => { if (form==null) return ''; if (form > 5) return 'text-blue-500'; if (form > -10) return 'text-green-500'; if (form > -25) return 'text-gray-500'; return 'text-red-500'; }; container.innerHTML = `${createSummaryCard('trending-up', 'Fitness', summary.fitness)}${createSummaryCard('flame', 'Fatigue', summary.fatigue)}${createSummaryCard('shield-check', 'Forme', summary.form, `font-bold ${getFormClass(summary.form)}`)}${createSummaryCard('lungs', 'VO2max', summary.vo2max)}`;}
         function renderActivityDetail(activities, index) { const title = document.getElementById('latest-activity-title'); const detailsContainer = document.getElementById('summary-details-container'); if (!activities || !activities.length) return; const activity = activities[index]; title.textContent = index === 0 ? "Dernière Activité" : "Détail de l'Activité"; detailsContainer.innerHTML = `<p class="date">${formatDate(activity.start_date_local)}</p><h3>${activity.name}</h3>${createStatDetail('ruler','Distance',`${(activity.distance/1000).toFixed(2)}`,'km')}${createStatDetail('timer','Durée',formatMovingTime(activity.moving_time))}${createStatDetail('trending-up','Dénivelé',`${activity.total_elevation_gain.toFixed(0)}`,'m')}`; renderMap(activity.map_polyline, activity.zwift_world); const chartCard = document.getElementById('elevation-chart-card'); if (activity.elevation_data) { chartCard.style.display = 'block'; renderChart(activity.elevation_data, 'elevationChart'); } else { chartCard.style.display = 'none'; } }
         function renderHistory(activities, selectedIndex) { const historyTableBody = document.getElementById('history-table-body'); if (!activities || !activities.length) return; historyTableBody.innerHTML = ''; activities.forEach((activity, index) => { const row = document.createElement('tr'); if (index === selectedIndex) row.classList.add('selected'); row.dataset.index = index; row.innerHTML = `<td class="strava-orange">${activity.name}</td><td>${(activity.distance / 1000).toFixed(2)} km</td><td>${new Date(activity.start_date_local).toLocaleDateString('fr-FR')}</td>`; historyTableBody.appendChild(row); }); historyTableBody.removeEventListener('click', handleHistoryClick); historyTableBody.addEventListener('click', handleHistoryClick); }
         function handleHistoryClick(event) { const clickedRow = event.target.closest('tr'); if (!clickedRow) return; const index = parseInt(clickedRow.dataset.index, 10); renderActivityDetail(allActivitiesData, index); renderHistory(allActivitiesData, index); lucide.createIcons(); }
