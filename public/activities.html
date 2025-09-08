@@ -36,7 +36,7 @@
         .stat-value { font-weight: 600; font-size: 1.1rem; }
         
         /* --- MODIFICATION ICI : Hauteurs des graphiques --- */
-        .fitness-chart-container { position: relative; height: 250px; width: 100%; margin-bottom: 16px; }
+        .fitness-chart-container { position: relative; height: 200px; width: 100%; margin-bottom: 16px; }
         .form-chart-container { position: relative; height: 100px; width: 100%; }
         
         .activity-table { width: 100%; border-collapse: collapse; }
@@ -124,7 +124,7 @@
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
-                    scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: true, text: 'Forme' } }, y: { title: { display: false } } },
+                    scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: false } }, y: { title: { display: true, text: 'Forme' } } },
                     plugins: {
                         legend: { display: false },
                         annotation: { // Les zones de couleur sont conservées
@@ -148,7 +148,7 @@
         function handleHistoryClick(event) { const clickedRow = event.target.closest('tr'); if (!clickedRow) return; const index = parseInt(clickedRow.dataset.index, 10); renderActivityDetail(allActivitiesData, index); renderHistory(allActivitiesData, index); lucide.createIcons(); }
         function createSummaryCard(icon, title, value, valueClass = '') { return `<div class="card summary-card"><h3 class="flex items-center justify-center gap-2"><i data-lucide="${icon}" class="w-4 h-4 text-gray-400"></i>${title}</h3><p class="${valueClass}">${value ?? '-'}</p></div>`; }
         function createGoalStat(idPrefix, title, data) { const remaining = (data.goal - data.current).toFixed(0); const percentage = data.goal > 0 ? ((data.current / data.goal) * 100).toFixed(0) : 0; return `<div class="goal-stat"><div class="goal-chart-container"><canvas id="${idPrefix}Chart"></canvas><div class="goal-percentage">${percentage}%</div></div><div class="goal-details"><h3>${title}</h3><p>${remaining}km à parcourir</p><p class="sub">${data.current.toFixed(0)}km / ${data.goal}km</p></div></div>`;}
-        function renderGoalChart(canvasId,data, chartInstance){ if(chartInstance){chartInstance.destroy()} const ctx=document.getElementById(canvasId).getContext("2d"); return new Chart(ctx,{type:"doughnut",data:{datasets:[{data:[data.current,Math.max(0,data.goal-data.current)],backgroundColor:["#fc5200","#f3f4f6"],borderWidth:0,borderRadius:0}]},options:{responsive:!0,maintainAspectRatio:!1,cutout:"50%",plugins:{legend:{display:!1},tooltip:{enabled:!1}}}});}
+        function renderGoalChart(canvasId,data, chartInstance){ if(chartInstance){chartInstance.destroy()} const ctx=document.getElementById(canvasId).getContext("2d"); return new Chart(ctx,{type:"doughnut",data:{datasets:[{data:[data.current,Math.max(0,data.goal-data.current)],backgroundColor:["#fc5200","#f3f4f6"],borderWidth:0,borderRadius:0}]},options:{responsive:!0,maintainAspectRatio:!1,cutout:"75%",plugins:{legend:{display:!1},tooltip:{enabled:!1}}}});}
         function createStatDetail(icon, label, value, unit = '') { return `<div class="stat-item"><div class="stat-label"><i data-lucide="${icon}"></i>${label}</div><div class="stat-value">${value} <span class="unit">${unit}</span></div></div>`; }
         function formatDate(d) { return new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
         function formatMovingTime(timeValue) { const parts=timeValue.split(':').map(Number);if(parts.length===3){const[h,m,s]=parts;if(h>0)return`${h}h ${m}min`;return`${m}min ${s}s`;}const totalSeconds=parseInt(timeValue,10);if(isNaN(totalSeconds))return timeValue;const h=Math.floor(totalSeconds/3600);const m=Math.floor((totalSeconds%3600)/60);const s=totalSeconds%60;if(h>0)return`${h}h ${m}min`;return`${m}min ${s}s`;}
