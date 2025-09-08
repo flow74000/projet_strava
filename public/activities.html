@@ -97,9 +97,9 @@
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [ { label: 'Fitness', data: ctlData, borderColor: 'rgba(252, 76, 2, 0.8)', backgroundColor: 'rgba(252, 76, 2, 0.1)', borderWidth: 2.5, tension: 0.4, fill: true, pointRadius: 0 } ]
+                    datasets: [ { label: 'Fitness', data: ctlData, borderColor: 'rgba(252, 76, 2, 0.8)', backgroundColor: 'rgba(252, 76, 2, 0.1)', borderWidth: 1.5, tension: 0.4, fill: true, pointRadius: 0 } ]
                 },
-                options: { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: false } }, y: { title: { display: true, text: 'Charge d\'entraînement (CTL)' } } }, plugins: { legend: { display: false } } }
+                options: { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: false } }, y: { title: { display: true, text: 'Fitness' } } }, plugins: { legend: { display: false } } }
             });
         }
         function renderFormChart(data) {
@@ -117,22 +117,22 @@
                         label: 'Forme',
                         data: tsbData,
                         borderColor: 'rgb(119, 119, 119)', // Couleur grise
-                        borderWidth: 2.5,
+                        borderWidth: 1.5,
                         tension: 0.4,
                         pointRadius: 0
                     }]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
-                    scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: false } }, y: { title: { display: false } } },
+                    scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: true, text: 'Forme' } }, y: { title: { display: false } } },
                     plugins: {
                         legend: { display: false },
                         annotation: { // Les zones de couleur sont conservées
                             annotations: {
-                                highRisk: { type: 'box', yMin: -Infinity, yMax: -30, backgroundColor: 'rgba(239, 68, 68, 0.4)', borderColor: 'transparent' },
-                                greyZone: { type: 'box', yMin: -30, yMax: -10, backgroundColor: 'rgba(107, 114, 128, 0.4)', borderColor: 'transparent' },
-                                optimal: { type: 'box', yMin: -10, yMax: 5, backgroundColor: 'rgba(34, 197, 94, 0.4)', borderColor: 'transparent' },
-                                fresh: { type: 'box', yMin: 5, yMax: Infinity, backgroundColor: 'rgba(59, 130, 246, 0.4)', borderColor: 'transparent' }
+                                highRisk: { type: 'box', yMin: -Infinity, yMax: -30, backgroundColor: 'rgba(239, 68, 68, 0.2)', borderColor: 'transparent' },
+                                greyZone: { type: 'box', yMin: -30, yMax: -10, backgroundColor: 'rgba(107, 114, 128, 0.2)', borderColor: 'transparent' },
+                                optimal: { type: 'box', yMin: -10, yMax: 5, backgroundColor: 'rgba(34, 197, 94, 0.2)', borderColor: 'transparent' },
+                                fresh: { type: 'box', yMin: 5, yMax: Infinity, backgroundColor: 'rgba(59, 130, 246, 0.2)', borderColor: 'transparent' }
                             }
                         }
                     }
