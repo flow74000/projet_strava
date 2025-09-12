@@ -26,7 +26,7 @@
         .fitness-section { display: grid; grid-template-columns: 1fr; gap: 24px; }
         @media (min-width: 1024px) { .fitness-section { grid-template-columns: 2fr 3fr; } }
         .fitness-stats-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-        .summary-card { padding: 20px; text-align: center; border-radius: 10px; background-color: var(--white); border: 1px solid var(--gray-200); }
+        .summary-card { padding: 16px; text-align: center; border-radius: 10px; background-color: var(--white); border: 1px solid var(--gray-200); }
         .summary-card h3 { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 0.8rem; font-weight: 600; color: var(--gray-500); text-transform: uppercase; margin-bottom: 8px; }
         .summary-card p { font-size: 2rem; font-weight: 800; color: var(--gray-800); margin: 0; }
         .latest-activity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; align-items: flex-start; }
@@ -99,7 +99,7 @@
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [ { label: 'Fitness', data: ctlData, borderColor: 'rgba(252, 76, 2, 0.8)', backgroundColor: 'rgba(252, 76, 2, 0.1)', borderWidth: 1.5, tension: 0.4, fill: true, pointRadius: 0 } ]
+                    datasets: [ { label: 'Fitness', data: ctlData, borderColor: 'rgba(252, 76, 2, 0.8)', backgroundColor: 'rgba(252, 76, 2, 0.1)', borderWidth: 2, tension: 0.4, fill: true, pointRadius: 0 } ]
                 },
                 options: { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: false } }, y: { title: { display: true, text: 'Fitness' } } }, plugins: { legend: { display: false } } }
             });
@@ -119,7 +119,7 @@
                         label: 'Forme',
                         data: tsbData,
                         borderColor: 'rgb(119, 119, 119)', // Couleur grise
-                        borderWidth: 1.5,
+                        borderWidth: 2,
                         tension: 0.4,
                         pointRadius: 0
                     }]
