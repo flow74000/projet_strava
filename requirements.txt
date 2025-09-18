@@ -1,5 +1,7 @@
 stravalib
-requests
 Flask
 Flask-Cors
 gunicorn
+requests
+psycopg2-binary
+polyline
