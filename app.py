@@ -1,79 +1,94 @@
-# Fichier: app.py (Version finale avec restauration du graphique d'altitude)
+# Fichier: app.py (Version finale et complète)
 
 import os
 import requests
 import traceback
-import psycopg2
-import polyline
 from datetime import date, timedelta, datetime
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from stravalib.client import Client
+from stravalib import exc
 
 app = Flask(__name__)
 CORS(app)
 
-# ... (La fonction get_fitness_data reste inchangée) ...
 def get_fitness_data():
     try:
-        athlete_id_icu=os.environ.get("INTERVALS_ATHLETE_ID");api_key=os.environ.get("INTERVALS_API_KEY");pma=float(os.environ.get("PMA_WATTS",0));default_weight=float(os.environ.get("DEFAULT_WEIGHT",70));
-        if not all([athlete_id_icu,api_key,pma]):return None,None
-        today=date.today();history_start_date=today-timedelta(days=180);url=f"https://intervals.icu/api/v1/athlete/{athlete_id_icu}/wellness?oldest={history_start_date}&newest={today}";
-        response=requests.get(url,auth=('API_KEY',api_key));response.raise_for_status();wellness_data=response.json();
-        if not wellness_data:return None,None
-        wellness_data.sort(key=lambda x:x['id'],reverse=True);latest_data=wellness_data[0];last_known_weight=next((entry.get('weight')for entry in wellness_data if entry.get('weight')is not None),default_weight);current_weight=latest_data.get('weight',last_known_weight);ctl,atl=latest_data.get('ctl'),latest_data.get('atl');form=ctl-atl if ctl is not None and atl is not None else None;vo2max=((0.01141*pma+0.435)/current_weight)*1000 if current_weight and current_weight>0 else None;wellness_data.sort(key=lambda x:x['id']);summary={"fitness":round(ctl)if ctl is not None else None,"fatigue":round(atl)if atl is not None else None,"form":round(form)if form is not None else None,"vo2max":round(vo2max,1)if vo2max is not None else None};return summary,wellness_data
+        athlete_id_icu = os.environ.get("INTERVALS_ATHLETE_ID")
+        api_key = os.environ.get("INTERVALS_API_KEY")
+        pma = float(os.environ.get("PMA_WATTS", 0))
+        default_weight = float(os.environ.get("DEFAULT_WEIGHT", 70))
+        if not all([athlete_id_icu, api_key, pma]): return None, None
+        
+        today = date.today()
+        history_start_date = today - timedelta(days=180)
+        url = f"https://intervals.icu/api/v1/athlete/{athlete_id_icu}/wellness?oldest={history_start_date}&newest={today}"
+        
+        response = requests.get(url, auth=('API_KEY', api_key))
+        response.raise_for_status()
+        wellness_data = response.json()
+        
+        if not wellness_data: return None, None
+
+        wellness_data.sort(key=lambda x: x['id'], reverse=True)
+        latest_data = wellness_data[0]
+        last_known_weight = next((entry.get('weight') for entry in wellness_data if entry.get('weight') is not None), default_weight)
+        current_weight = latest_data.get('weight', last_known_weight)
+        ctl, atl = latest_data.get('ctl'), latest_data.get('atl')
+        form = ctl - atl if ctl is not None and atl is not None else None
+        vo2max = ((0.01141 * pma + 0.435) / current_weight) * 1000 if current_weight and current_weight > 0 else None
+        wellness_data.sort(key=lambda x: x['id'])
+        summary = {"fitness": round(ctl) if ctl is not None else None, "fatigue": round(atl) if atl is not None else None, "form": round(form) if form is not None else None, "vo2max": round(vo2max, 1) if vo2max is not None else None}
+        return summary, wellness_data
     except Exception as e:
-        print(f"Erreur API Intervals.icu: {e}");return None,None
+        print(f"Erreur API Intervals.icu: {e}")
+        return None, None
 
 @app.route("/api/strava")
 def strava_handler():
     try:
-        DATABASE_URL = os.environ.get('DATABASE_URL')
-        conn = psycopg2.connect(DATABASE_URL)
+        fitness_summary, form_chart_data = get_fitness_data()
         client = Client()
         token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=request.args.get('code'))
         access_token = token_response['access_token']
         authed_client = Client(access_token=access_token)
+        athlete = authed_client.get_athlete()
+        athlete_id_strava = athlete.id
+        activities = list(authed_client.get_activities(limit=50))
         
-        # ... (La logique de synchronisation reste inchangée) ...
-        print("Synchronisation avec Strava...");latest_strava_activities=list(authed_client.get_activities(limit=20));strava_ids=[act.id for act in latest_strava_activities];
-        with conn.cursor() as cur:cur.execute("SELECT id FROM activities WHERE id = ANY(%s::bigint[])",(strava_ids,));existing_ids={row[0]for row in cur.fetchall()};
-        new_activities_to_add=[act for act in latest_strava_activities if act.id not in existing_ids];
-        if new_activities_to_add:
-            print(f"Ajout de {len(new_activities_to_add)} nouvelle(s) activité(s)...")
-            with conn.cursor() as cur:
-                for activity in new_activities_to_add:
-                    streams=authed_client.get_activity_streams(activity.id,types=['latlng']);encoded_polyline=polyline.encode(streams['latlng'].data)if streams and'latlng'in streams else None;moving_time_obj=getattr(activity,'moving_time',None);moving_time_seconds=moving_time_obj.total_seconds()if hasattr(moving_time_obj,'total_seconds')else 0;
-                    cur.execute("INSERT INTO activities (id, name, start_date, distance, moving_time_seconds, elevation_gain, polyline) VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING",(activity.id,activity.name,activity.start_date_local,float(getattr(activity,'distance',0))/1000,moving_time_seconds,float(getattr(activity,'total_elevation_gain',0)),encoded_polyline));
-            conn.commit();print("Synchronisation terminée.")
-        else:
-            print("Base de données déjà à jour.")
+        today = date.today()
+        start_of_week = today - timedelta(days=today.weekday())
+        weekly_distance = sum(float(getattr(act, 'distance', 0)) for act in activities if act.start_date_local.date() >= start_of_week)
+        weekly_summary = {"current": weekly_distance / 1000, "goal": 200}
         
-        activities_from_db = []
-        with conn.cursor() as cur:
-            # On récupère les 10 dernières activités de la base
-            cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain, polyline FROM activities ORDER BY start_date DESC LIMIT 10")
-            for r in cur.fetchall():
-                # --- MODIFICATION ICI : On ajoute les données d'altitude pour chaque activité ---
-                elevation_data = None
-                streams = authed_client.get_activity_streams(r[0], types=['distance', 'altitude'])
-                if streams and 'distance' in streams and 'altitude' in streams:
-                    elevation_data = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
+        stats = authed_client.get_athlete_stats(athlete_id_strava)
+        ytd_distance = float(stats.ytd_ride_totals.distance)
+        yearly_summary = {"current": ytd_distance / 1000, "goal": 8000}
+        
+        activities_json = []
+        for activity in activities[:10]:
+            map_polyline, elevation_data = None, None
+            if hasattr(activity, 'map') and activity.map.summary_polyline: map_polyline = activity.map.summary_polyline
+            activity_id = getattr(activity, 'id', None)
+            if activity_id:
+                try:
+                    streams = authed_client.get_activity_streams(activity_id, types=['distance', 'altitude'])
+                    if streams and 'distance' in streams and 'altitude' in streams: elevation_data = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
+                except exc.ObjectNotFound:
+                    print(f"AVERTISSEMENT : Activité {activity_id} introuvable, elle sera ignorée.")
+                    pass
+            
+            activities_json.append({
+                'name': activity.name, 'start_date_local': activity.start_date_local.isoformat(),
+                'moving_time': str(getattr(activity, 'moving_time', '0')),
+                'distance': float(getattr(activity, 'distance', 0)),
+                'total_elevation_gain': float(getattr(activity, 'total_elevation_gain', 0)),
+                'map_polyline': map_polyline,
+                'elevation_data': elevation_data
+            })
 
-                activities_from_db.append({
-                    "name": r[1], "start_date_local": r[2].isoformat(),
-                    "moving_time": str(timedelta(seconds=int(r[3]))), "distance": r[4] * 1000,
-                    "total_elevation_gain": r[5], "map_polyline": r[6],
-                    "elevation_data": elevation_data # On ajoute les données du graphique ici
-                })
-        conn.close()
-
-        fitness_summary, form_chart_data = get_fitness_data()
-        athlete = authed_client.get_athlete(); stats = authed_client.get_athlete_stats(athlete.id); ytd_distance = float(stats.ytd_ride_totals.distance) / 1000; yearly_summary = {"current": ytd_distance, "goal": 8000};
-        today = date.today(); start_of_week = today - timedelta(days=today.weekday()); weekly_distance = sum(act['distance'] / 1000 for act in activities_from_db if datetime.fromisoformat(act['start_date_local']).date() >= start_of_week); weekly_summary = {"current": weekly_distance, "goal": 200};
-        
         return jsonify({
-            "activities": activities_from_db,
+            "activities": activities_json,
             "goals": { "weekly": weekly_summary, "yearly": yearly_summary },
             "fitness_summary": fitness_summary,
             "form_chart_data": form_chart_data
