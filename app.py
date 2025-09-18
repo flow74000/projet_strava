@@ -1,4 +1,4 @@
-# Fichier: app.py (Version finale avec synchronisation et BDD)
+# Fichier: app.py (Version avec gestion de la durée corrigée)
 
 import os
 import requests
@@ -15,6 +15,7 @@ CORS(app)
 
 # ... (La fonction get_fitness_data reste inchangée) ...
 def get_fitness_data():
+    # ... (code complet de la fonction get_fitness_data)
     try:
         athlete_id_icu=os.environ.get("INTERVALS_ATHLETE_ID");api_key=os.environ.get("INTERVALS_API_KEY");pma=float(os.environ.get("PMA_WATTS",0));default_weight=float(os.environ.get("DEFAULT_WEIGHT",70));
         if not all([athlete_id_icu,api_key,pma]):return None,None
@@ -52,18 +53,24 @@ def strava_handler():
                 for activity in new_activities_to_add:
                     streams = authed_client.get_activity_streams(activity.id, types=['latlng'])
                     encoded_polyline = polyline.encode(streams['latlng'].data) if streams and 'latlng' in streams else None
+                    
+                    # --- CORRECTION ICI : Gestion plus sûre de la durée ---
+                    moving_time_obj = getattr(activity, 'moving_time', None)
+                    moving_time_seconds = moving_time_obj.total_seconds() if hasattr(moving_time_obj, 'total_seconds') else 0
+                    
                     cur.execute(
                         """
                         INSERT INTO activities (id, name, start_date, distance, moving_time_seconds, elevation_gain, polyline)
                         VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING
                         """,
-                        (activity.id, activity.name, activity.start_date_local, float(getattr(activity, 'distance', 0)) / 1000, getattr(activity, 'moving_time', timedelta(seconds=0)).total_seconds(), float(getattr(activity, 'total_elevation_gain', 0)), encoded_polyline)
+                        (activity.id, activity.name, activity.start_date_local, float(getattr(activity, 'distance', 0)) / 1000, moving_time_seconds, float(getattr(activity, 'total_elevation_gain', 0)), encoded_polyline)
                     )
             conn.commit()
             print("Synchronisation terminée.")
         else:
             print("Base de données déjà à jour.")
 
+        # Le reste du fichier est inchangé
         with conn.cursor() as cur:
             cur.execute("SELECT name, start_date, moving_time_seconds, distance, elevation_gain, polyline FROM activities ORDER BY start_date DESC LIMIT 10")
             activities_from_db = [{"name": r[0], "start_date_local": r[1].isoformat(), "moving_time": str(timedelta(seconds=int(r[2]))), "distance": r[3] * 1000, "total_elevation_gain": r[4], "map_polyline": r[5], "elevation_data": None} for r in cur.fetchall()]
