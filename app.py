@@ -1,9 +1,10 @@
-# Fichier: app.py (Version avec graphique de progression)
+# Fichier: app.py (Version avec synchronisation améliorée et robuste)
 
 import os
 import requests
 import traceback
 import psycopg2
+import polyline
 from datetime import date, timedelta, datetime
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -25,85 +26,76 @@ def get_fitness_data():
     except Exception as e:
         print(f"Erreur API Intervals.icu: {e}");return None,None
 
-# --- NOUVELLE FONCTION POUR LE GRAPHIQUE DE PROGRESSION ---
-def get_progression_data(conn):
-    try:
-        today = date.today()
-        current_year = today.year
-        previous_year = current_year - 1
-
-        with conn.cursor() as cur:
-            # On récupère les distances par mois pour les deux années
-            cur.execute("""
-                SELECT 
-                    EXTRACT(YEAR FROM start_date) as year, 
-                    EXTRACT(MONTH FROM start_date) as month, 
-                    SUM(distance) as total_distance 
-                FROM activities 
-                WHERE EXTRACT(YEAR FROM start_date) IN (%s, %s) 
-                GROUP BY year, month
-            """, (current_year, previous_year))
-            
-            results = cur.fetchall()
-
-        current_year_dist = [0] * 12
-        previous_year_dist = [0] * 12
-
-        for row in results:
-            year, month, total_distance = int(row[0]), int(row[1]), float(row[2])
-            if year == current_year:
-                current_year_dist[month - 1] = total_distance
-            elif year == previous_year:
-                previous_year_dist[month - 1] = total_distance
-        
-        # On calcule la somme cumulative pour chaque année
-        for i in range(1, 12):
-            current_year_dist[i] += current_year_dist[i-1]
-            previous_year_dist[i] += previous_year_dist[i-1]
-        
-        return {
-            "current_year": [round(d) for d in current_year_dist],
-            "previous_year": [round(d) for d in previous_year_dist]
-        }
-    except Exception as e:
-        print(f"Erreur lors du calcul de la progression: {e}")
-        return None
-
 @app.route("/api/strava")
 def strava_handler():
     try:
         DATABASE_URL = os.environ.get('DATABASE_URL')
         conn = psycopg2.connect(DATABASE_URL)
-        
         client = Client()
         token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=request.args.get('code'))
         access_token = token_response['access_token']
         authed_client = Client(access_token=access_token)
         
-        # ... (La logique de synchronisation reste inchangée) ...
+        # --- LOGIQUE DE SYNCHRONISATION AMÉLIORÉE ---
+        print("Début de la synchronisation intelligente avec Strava...")
+        new_activities_found = 0
+        activities_iterator = authed_client.get_activities()
         
-        progression_data = get_progression_data(conn)
+        with conn.cursor() as cur:
+            for activity in activities_iterator:
+                cur.execute("SELECT id FROM activities WHERE id = %s", (activity.id,))
+                if cur.fetchone():
+                    print(f"Activité {activity.id} déjà en base. Fin de la recherche.")
+                    break
+                
+                print(f"Nouvelle activité trouvée : {activity.name} ({activity.id})")
+                new_activities_found += 1
+                
+                streams = authed_client.get_activity_streams(activity.id, types=['latlng'])
+                encoded_polyline = polyline.encode(streams['latlng'].data) if streams and 'latlng' in streams else None
+                moving_time_obj = getattr(activity, 'moving_time', timedelta(seconds=0))
+                moving_time_seconds = moving_time_obj.total_seconds()
+
+                cur.execute(
+                    """
+                    INSERT INTO activities (id, name, start_date, distance, moving_time_seconds, elevation_gain, polyline)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (activity.id, activity.name, activity.start_date_local, 
+                     float(getattr(activity, 'distance', 0)) / 1000, 
+                     moving_time_seconds, 
+                     float(getattr(activity, 'total_elevation_gain', 0)), 
+                     encoded_polyline)
+                )
         
-        activities_from_db = []
+        if new_activities_found > 0:
+            conn.commit()
+            print(f"{new_activities_found} activité(s) ajoutée(s).")
+        else:
+            print("Base de données déjà à jour.")
+        # --- FIN DE LA LOGIQUE DE SYNCHRONISATION ---
+
+        # Le reste du code qui lit depuis la BDD est inchangé
         with conn.cursor() as cur:
             cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain, polyline FROM activities ORDER BY start_date DESC LIMIT 10")
-            for r in cur.fetchall():
-                elevation_data = None
-                try:
-                    streams = authed_client.get_activity_streams(r[0], types=['distance', 'altitude'])
-                    if streams and 'distance' in streams and 'altitude' in streams:
-                        elevation_data = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
-                except exc.ObjectNotFound:
-                    pass
-                
-                activities_from_db.append({
+            activities_from_db = [
+                {
                     "name": r[1], "start_date_local": r[2].isoformat(),
                     "moving_time": str(timedelta(seconds=int(r[3]))), "distance": r[4] * 1000,
-                    "total_elevation_gain": r[5], "map_polyline": r[6],
-                    "elevation_data": elevation_data
-                })
+                    "total_elevation_gain": r[5], "map_polyline": r[6], "elevation_data": None, "id": r[0]
+                } for r in cur.fetchall()
+            ]
         conn.close()
-        
+
+        # On enrichit les données avec les streams d'altitude
+        for activity in activities_from_db:
+            try:
+                streams = authed_client.get_activity_streams(activity['id'], types=['distance', 'altitude'])
+                if streams and 'distance' in streams and 'altitude' in streams:
+                    activity['elevation_data'] = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
+            except exc.ObjectNotFound:
+                pass
+
         fitness_summary, form_chart_data = get_fitness_data()
         athlete = authed_client.get_athlete(); stats = authed_client.get_athlete_stats(athlete.id); ytd_distance = float(stats.ytd_ride_totals.distance) / 1000; yearly_summary = {"current": ytd_distance, "goal": 8000};
         today = date.today(); start_of_week = today - timedelta(days=today.weekday()); weekly_distance = sum(act['distance'] / 1000 for act in activities_from_db if datetime.fromisoformat(act['start_date_local']).date() >= start_of_week); weekly_summary = {"current": weekly_distance, "goal": 200};
@@ -112,10 +104,9 @@ def strava_handler():
             "activities": activities_from_db,
             "goals": { "weekly": weekly_summary, "yearly": yearly_summary },
             "fitness_summary": fitness_summary,
-            "form_chart_data": form_chart_data,
-            "progression_data": progression_data
+            "form_chart_data": form_chart_data
         })
+
     except Exception as e:
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
-
