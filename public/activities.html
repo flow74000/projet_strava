@@ -42,6 +42,7 @@
         .stat-value { font-weight: 600; font-size: 1.1rem; }
         .fitness-chart-container { position: relative; height: 200px; width: 100%; margin-bottom: 16px; }
         .form-chart-container { position: relative; height: 100px; width: 100%; }
+        .chart-container { position: relative; height: 350px; width: 100%; }
         .activity-table { width: 100%; border-collapse: collapse; }
         .activity-table tbody tr { cursor: pointer; }
         .activity-table tbody tr:hover { background-color: #f9fafb; }
@@ -57,6 +58,9 @@
         <div id="content-wrapper" style="display: none;">
             <div class="dashboard-header"><h1 >Mon Tableau de Bord</h1><div class="goals-container" id="goals-container"></div></div>
             <div class="card"><h2 >Condition Physique</h2><div class="fitness-section"><div id="fitness-summary-cards" class="fitness-stats-cards"></div><div id="charts-column"><div class="fitness-chart-container"><canvas id="fitnessFatigueChart"></canvas></div><div class="form-chart-container"><canvas id="formChart"></canvas></div></div></div></div>
+            
+            <div class="card" id="progression-card" style="display: none;"><h2>Progression Annuelle</h2><div class="chart-container"><canvas id="progressionChart"></canvas></div></div>
+            
             <div class="card"><h2 id="latest-activity-title">Dernière Activité</h2><div class="latest-activity-grid"><div id="summary-details-container" class="summary-panel"></div><div id="map-container"></div></div><div id="elevation-chart-card" style="display: none;" class="mt-6"><div class="chart-container" style="height: 200px;"><canvas id="elevationChart"></canvas></div></div></div>
             <div class="card"><h2>Historique</h2><table class="activity-table"><tbody id="history-table-body"></tbody></table></div>
         </div>
@@ -69,7 +73,7 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     
     <script>
-        let allActivitiesData = [], weeklyGoalChart, yearlyGoalChart, formChart, elevationChart, fitnessFatigueChart;
+        let allActivitiesData = [], weeklyGoalChart, yearlyGoalChart, formChart, elevationChart, fitnessFatigueChart, progressionChart;
         document.addEventListener('DOMContentLoaded', () => {
             const API_URL = "https://projet-strava-api.onrender.com/api/strava";
             const statusContainer = document.getElementById('status-container');
@@ -82,12 +86,26 @@
             renderGoals(data.goals);
             renderFitnessSummary(data.fitness_summary);
             renderActivityDetail(data.activities, selectedIndex);
-            if (data.form_chart_data) {
-                renderFitnessFatigueChart(data.form_chart_data);
-                renderFormChart(data.form_chart_data);
-            }
+            if (data.form_chart_data) { renderFitnessFatigueChart(data.form_chart_data); renderFormChart(data.form_chart_data); }
+            if (data.progression_data) { document.getElementById('progression-card').style.display = 'block'; renderProgressionChart(data.progression_data); }
             renderHistory(data.activities, selectedIndex);
             lucide.createIcons();
+        }
+        function renderProgressionChart(data) {
+            if (progressionChart) { progressionChart.destroy(); }
+            const ctx = document.getElementById('progressionChart').getContext('2d');
+            const labels = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
+            progressionChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: `Année en cours (${new Date().getFullYear()})`, data: data.current_year, borderColor: 'var(--strava-orange)', backgroundColor: 'rgba(252, 82, 0, 0.1)', fill: true, tension: 0.3, borderWidth: 3 },
+                        { label: `Année précédente (${new Date().getFullYear() - 1})`, data: data.previous_year, borderColor: 'var(--gray-500)', borderDash: [5, 5], fill: false, tension: 0.3, borderWidth: 2 }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { title: { display: true, text: 'Distance Cumulative (km)' } } }, plugins: { legend: { position: 'bottom' } } }
+            });
         }
         function renderGoals(goals) { if (!goals) return; const container = document.getElementById('goals-container'); container.innerHTML = ''; if (goals.weekly) { container.innerHTML += createGoalStat('weeklyGoal', 'Objectif Semaine', goals.weekly); } if (goals.yearly) { container.innerHTML += createGoalStat('yearlyGoal', 'Objectif Annuel', goals.yearly); } if (goals.weekly) weeklyGoalChart = renderGoalChart('weeklyGoalChart', goals.weekly, weeklyGoalChart); if (goals.yearly) yearlyGoalChart = renderGoalChart('yearlyGoalChart', goals.yearly, yearlyGoalChart); }
         function renderFitnessSummary(summary) { const container = document.getElementById('fitness-summary-cards'); if (!summary) return; const getFormClass = (form) => { if (form==null) return ''; if (form > 5) return 'text-blue-500'; if (form > -10) return 'text-green-500'; if (form > -25) return 'text-gray-500'; return 'text-red-500'; }; container.innerHTML = `${createSummaryCard('trending-up', 'Fitness', summary.fitness)}${createSummaryCard('battery-low', 'Fatigue', summary.fatigue)}${createSummaryCard('activity', 'Forme', summary.form, `font-bold ${getFormClass(summary.form)}`)}${createSummaryCard('zap', 'VO2max', summary.vo2max)}`;}
