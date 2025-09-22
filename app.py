@@ -118,3 +118,4 @@ def strava_handler():
     except Exception as e:
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
+
