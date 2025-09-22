@@ -52,7 +52,7 @@
             const contentWrapper = document.getElementById('content-wrapper');
 
             // On appelle notre nouvelle route API
-            fetch('/api/weight')
+        fetch(`${API_BASE_URL}/api/weight`)
                 .then(response => {
                     if (!response.ok) {
                         throw new Error('La réponse du serveur n\'est pas OK');
