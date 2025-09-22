@@ -1,4 +1,4 @@
-# Fichier: app.py (Version avec correction de la synchronisation)
+# Fichier: app.py (Version finale corrigée)
 
 import os
 import requests
@@ -17,14 +17,70 @@ CORS(app)
 # --- La fonction get_fitness_data reste inchangée ---
 def get_fitness_data():
     try:
-        athlete_id_icu=os.environ.get("INTERVALS_ATHLETE_ID");api_key=os.environ.get("INTERVALS_API_KEY");pma=float(os.environ.get("PMA_WATTS",0));default_weight=float(os.environ.get("DEFAULT_WEIGHT",70));
-        if not all([athlete_id_icu,api_key,pma]):return None,None
-        today=date.today();history_start_date=today-timedelta(days=180);url=f"https://intervals.icu/api/v1/athlete/{athlete_id_icu}/wellness?oldest={history_start_date}&newest={today}";
-        response=requests.get(url,auth=('API_KEY',api_key));response.raise_for_status();wellness_data=response.json();
-        if not wellness_data:return None,None
-        wellness_data.sort(key=lambda x:x['id'],reverse=True);latest_data=wellness_data[0];last_known_weight=next((entry.get('weight')for entry in wellness_data if entry.get('weight')is not None),default_weight);current_weight=latest_data.get('weight',last_known_weight);ctl,atl=latest_data.get('ctl'),latest_data.get('atl');form=ctl-atl if ctl is not None and atl is not None else None;vo2max=((0.01141*pma+0.435)/current_weight)*1000 if current_weight and current_weight>0 else None;wellness_data.sort(key=lambda x:x['id']);summary={"fitness":round(ctl)if ctl is not None else None,"fatigue":round(atl)if atl is not None else None,"form":round(form)if form is not None else None,"vo2max":round(vo2max,1)if vo2max is not None else None};return summary,wellness_data
+        athlete_id_icu=os.environ.get("INTERVALS_ATHLETE_ID")
+        api_key=os.environ.get("INTERVALS_API_KEY")
+        pma=float(os.environ.get("PMA_WATTS",0))
+        default_weight=float(os.environ.get("DEFAULT_WEIGHT",70))
+        
+        if not all([athlete_id_icu,api_key,pma]):
+            return None,None
+            
+        today=date.today()
+        history_start_date=today-timedelta(days=180)
+        url=f"https://intervals.icu/api/v1/athlete/{athlete_id_icu}/wellness?oldest={history_start_date}&newest={today}"
+        
+        response=requests.get(url,auth=('API_KEY',api_key))
+        response.raise_for_status()
+        wellness_data=response.json()
+        
+        if not wellness_data:
+            return None,None
+            
+        wellness_data.sort(key=lambda x:x['id'],reverse=True)
+        latest_data=wellness_data[0]
+        last_known_weight=next((entry.get('weight')for entry in wellness_data if entry.get('weight')is not None),default_weight)
+        current_weight=latest_data.get('weight',last_known_weight)
+        ctl,atl=latest_data.get('ctl'),latest_data.get('atl')
+        form=ctl-atl if ctl is not None and atl is not None else None
+        vo2max=((0.01141*pma+0.435)/current_weight)*1000 if current_weight and current_weight>0 else None
+        wellness_data.sort(key=lambda x:x['id'])
+        summary={"fitness":round(ctl)if ctl is not None else None,"fatigue":round(atl)if atl is not None else None,"form":round(form)if form is not None else None,"vo2max":round(vo2max,1)if vo2max is not None else None}
+        return summary,wellness_data
     except Exception as e:
-        print(f"Erreur API Intervals.icu: {e}");return None,None
+        print(f"Erreur API Intervals.icu: {e}")
+        return None,None
+
+# --- NOUVELLE FONCTION POUR LE CALCUL DE LA PROGRESSION ANNUELLE ---
+def get_annual_progress_by_month(client):
+    """
+    Récupère toutes les activités de l'année en cours et calcule la distance totale par mois.
+    """
+    try:
+        today = date.today()
+        start_of_year = datetime(today.year, 1, 1)
+
+        print(f"Récupération des activités pour l'année {today.year}...")
+        activities = client.get_activities(after=start_of_year)
+        
+        # Initialise un tableau de 12 zéros pour les 12 mois
+        monthly_distances = [0] * 12
+        
+        for activity in activities:
+            # Le mois est entre 1 (Jan) et 12 (Dec), on ajuste pour l'index du tableau (0-11)
+            month_index = activity.start_date_local.month - 1
+            distance_km = float(getattr(activity, 'distance', 0)) / 1000
+            monthly_distances[month_index] += distance_km
+            
+        # Arrondir les valeurs pour un affichage plus propre
+        monthly_distances = [round(d) for d in monthly_distances]
+        
+        print(f"Distances mensuelles calculées : {monthly_distances}")
+        return monthly_distances
+
+    except Exception as e:
+        print(f"Erreur lors du calcul de la progression annuelle : {e}")
+        # Renvoyer un tableau vide en cas de problème pour ne pas faire planter le frontend
+        return [0] * 12
 
 @app.route("/api/strava")
 def strava_handler():
@@ -53,13 +109,11 @@ def strava_handler():
                 streams = authed_client.get_activity_streams(activity.id, types=['latlng'])
                 encoded_polyline = polyline.encode(streams['latlng'].data) if streams and 'latlng' in streams else None
                 
-                # --- CORRECTION FINALE ICI ---
                 moving_time_obj = getattr(activity, 'moving_time', None)
                 moving_time_seconds = 0
                 if hasattr(moving_time_obj, 'total_seconds'):
                     moving_time_seconds = moving_time_obj.total_seconds()
                 elif moving_time_obj is not None:
-                    # Gère le cas de l'objet 'Duration' en le convertissant
                     moving_time_seconds = int(moving_time_obj)
 
                 cur.execute(
@@ -80,7 +134,6 @@ def strava_handler():
         else:
             print("Base de données déjà à jour.")
         
-        # Le reste du code qui lit les données est inchangé
         with conn.cursor() as cur:
             cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain, polyline FROM activities ORDER BY start_date DESC LIMIT 10")
             activities_from_db = [
@@ -100,14 +153,26 @@ def strava_handler():
             except exc.ObjectNotFound: pass
 
         fitness_summary, form_chart_data = get_fitness_data()
-        athlete = authed_client.get_athlete(); stats = authed_client.get_athlete_stats(athlete.id); ytd_distance = float(stats.ytd_ride_totals.distance) / 1000; yearly_summary = {"current": ytd_distance, "goal": 8000};
-        today = date.today(); start_of_week = today - timedelta(days=today.weekday()); weekly_distance = sum(act['distance'] / 1000 for act in activities_from_db if datetime.fromisoformat(act['start_date_local']).date() >= start_of_week); weekly_summary = {"current": weekly_distance, "goal": 200};
+        athlete = authed_client.get_athlete()
+        stats = authed_client.get_athlete_stats(athlete.id)
+        ytd_distance = float(stats.ytd_ride_totals.distance) / 1000
+        yearly_summary = {"current": ytd_distance, "goal": 8000}
+        
+        today = date.today()
+        start_of_week = today - timedelta(days=today.weekday())
+        weekly_distance = sum(act['distance'] / 1000 for act in activities_from_db if datetime.fromisoformat(act['start_date_local']).date() >= start_of_week)
+        weekly_summary = {"current": weekly_distance, "goal": 200}
+        
+        # --- MODIFICATION ICI : On appelle la nouvelle fonction ---
+        annual_progress_data = get_annual_progress_by_month(authed_client)
         
         return jsonify({
             "activities": activities_from_db,
             "goals": { "weekly": weekly_summary, "yearly": yearly_summary },
             "fitness_summary": fitness_summary,
-            "form_chart_data": form_chart_data
+            "form_chart_data": form_chart_data,
+            # --- MODIFICATION ICI : On ajoute le résultat au JSON ---
+            "annualProgressData": annual_progress_data
         })
 
     except Exception as e:
