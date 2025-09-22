@@ -26,7 +26,7 @@
     <div class="main-container">
         <nav class="main-nav">
             <a href="/activities.html">Accueil</a>
-            <a href="#" class="active">Nutrition</a>
+            <a href="/nutrition.html" class="active">Nutrition</a>
             <a href="#">Entrainement</a>
             <a href="#">Historique</a>
         </nav>
@@ -51,8 +51,11 @@
             const statusContainer = document.getElementById('status-container');
             const contentWrapper = document.getElementById('content-wrapper');
 
-            // On appelle notre nouvelle route API
-        fetch(`${API_BASE_URL}/api/weight`)
+            // On définit l'URL de base de notre API backend
+            const API_BASE_URL = "https://projet-strava-api.onrender.com";
+
+            // On construit l'URL complète et on appelle le fetch
+            fetch(`${API_BASE_URL}/api/weight`)
                 .then(response => {
                     if (!response.ok) {
                         throw new Error('La réponse du serveur n\'est pas OK');
