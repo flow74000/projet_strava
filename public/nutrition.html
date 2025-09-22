@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Nutrition - Mon Tableau de Bord</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&display=swap" rel="stylesheet">
+    <style>
+        :root { --strava-orange: #fc5200; --gray-100: #f3f4f6; --gray-200: #e5e7eb; --gray-500: #6b7280; --gray-800: #1f2937; --white: #ffffff; }
+        body { font-family: 'Lato', sans-serif; margin: 0; padding: 24px; background-color: var(--gray-100); }
+        .main-container { max-width: 1200px; margin: auto; }
+        .card { background-color: var(--white); border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
+        h1, h2 { color: var(--gray-800); margin-top: 0; }
+        h1 { font-size: 2.25rem; font-weight: 800; }
+        h2 { font-size: 1.5rem; font-weight: 700; padding-bottom: 16px; border-bottom: 1px solid var(--gray-200); }
+        .main-nav { display: flex; justify-content: center; gap: 1rem; border-bottom: 1px solid var(--gray-200); margin-bottom: 24px; }
+        .main-nav a { font-weight: 600; text-align: center; color: var(--gray-500); border-bottom: 3px solid transparent; padding: 1rem; text-decoration: none; transition: all 0.2s ease-in-out; }
+        .main-nav a:hover { color: var(--gray-800); border-bottom-color: var(--gray-300); }
+        .main-nav a.active { color: var(--strava-orange); border-bottom-color: var(--strava-orange); }
+        .chart-container { position: relative; height: 400px; width: 100%; }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <nav class="main-nav">
+            <a href="/activities.html">Accueil</a>
+            <a href="#" class="active">Nutrition</a>
+            <a href="#">Entrainement</a>
+            <a href="#">Historique</a>
+        </nav>
+
+        <div id="status-container" class="card" style="text-align: center; font-size: 1.2em; font-weight: bold; padding: 40px;">Chargement des données de poids...</div>
+        
+        <div id="content-wrapper" style="display: none;">
+            <div class="card">
+                <h2>Évolution du Poids (90 derniers jours)</h2>
+                <div class="chart-container">
+                    <canvas id="weightChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const statusContainer = document.getElementById('status-container');
+            const contentWrapper = document.getElementById('content-wrapper');
+
+            // On appelle notre nouvelle route API
+            fetch('/api/weight')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('La réponse du serveur n\'est pas OK');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    statusContainer.style.display = 'none';
+                    contentWrapper.style.display = 'block';
+                    renderWeightChart(data.weightHistory);
+                })
+                .catch(error => {
+                    console.error("Erreur lors de la récupération des données de poids:", error);
+                    statusContainer.innerHTML = `<h1>Une erreur est survenue</h1><p>${error.message}</p>`;
+                });
+        });
+
+        function renderWeightChart(weightData) {
+            if (!weightData || weightData.length === 0) {
+                document.getElementById('content-wrapper').innerHTML = "<div class='card'><p>Aucune donnée de poids disponible.</p></div>";
+                return;
+            }
+
+            const ctx = document.getElementById('weightChart').getContext('2d');
+            
+            // On prépare les données pour Chart.js
+            const labels = weightData.map(d => d.date);
+            const dataPoints = weightData.map(d => d.weight);
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Poids (kg)',
+                        data: dataPoints,
+                        borderColor: 'var(--strava-orange)',
+                        backgroundColor: 'rgba(252, 82, 0, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'week',
+                                tooltipFormat: 'dd MMM yyyy'
+                            },
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            }
+                        },
+                        y: {
+                            beginAtZero: false, // Le poids ne commence pas à 0
+                            title: {
+                                display: true,
+                                text: 'Poids (kg)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
