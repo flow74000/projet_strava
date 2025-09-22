@@ -1,15 +1,15 @@
-# Fichier: app.py (Version avec graphique de progression)
+# Fichier: app.py (Version finale et complète)
 
 import os
 import requests
 import traceback
 import psycopg2
+import polyline
 from datetime import date, timedelta, datetime
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from stravalib.client import Client
 from stravalib import exc
-import polyline
 
 app = Flask(__name__)
 CORS(app)
@@ -25,48 +25,6 @@ def get_fitness_data():
     except Exception as e:
         print(f"Erreur API Intervals.icu: {e}");return None,None
 
-# --- NOUVELLE FONCTION POUR LE GRAPHIQUE DE PROGRESSION ---
-def get_progression_data(conn):
-    try:
-        today = date.today()
-        current_year = today.year
-        previous_year = current_year - 1
-
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT 
-                    EXTRACT(YEAR FROM start_date) as year, 
-                    EXTRACT(MONTH FROM start_date) as month, 
-                    SUM(distance) as total_distance 
-                FROM activities 
-                WHERE EXTRACT(YEAR FROM start_date) IN (%s, %s) 
-                GROUP BY year, month
-            """, (current_year, previous_year))
-            
-            results = cur.fetchall()
-
-        current_year_dist = [0] * 12
-        previous_year_dist = [0] * 12
-
-        for row in results:
-            year, month, total_distance = int(row[0]), int(row[1]), float(row[2])
-            if year == current_year:
-                current_year_dist[month - 1] = total_distance
-            elif year == previous_year:
-                previous_year_dist[month - 1] = total_distance
-        
-        for i in range(1, 12):
-            current_year_dist[i] += current_year_dist[i-1]
-            previous_year_dist[i] += previous_year_dist[i-1]
-        
-        return {
-            "current_year": [round(d) for d in current_year_dist],
-            "previous_year": [round(d) for d in previous_year_dist]
-        }
-    except Exception as e:
-        print(f"Erreur lors du calcul de la progression: {e}")
-        return None
-
 @app.route("/api/strava")
 def strava_handler():
     try:
@@ -76,6 +34,10 @@ def strava_handler():
         token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=request.args.get('code'))
         access_token = token_response['access_token']
         authed_client = Client(access_token=access_token)
+        
+        # --- CORRECTION FIABLE POUR RÉCUPÉRER L'ATHLÈTE ---
+        athlete = authed_client.get_athlete()
+        athlete_id_strava = athlete.id
         
         print("Synchronisation intelligente...");
         new_activities_found = 0
@@ -92,8 +54,6 @@ def strava_handler():
                 cur.execute("INSERT INTO activities (id, name, start_date, distance, moving_time_seconds, elevation_gain, polyline) VALUES (%s, %s, %s, %s, %s, %s, %s)",(activity.id, activity.name, activity.start_date_local, float(getattr(activity, 'distance', 0)) / 1000, moving_time_seconds, float(getattr(activity, 'total_elevation_gain', 0)), encoded_polyline))
         if new_activities_found > 0: conn.commit()
         
-        progression_data = get_progression_data(conn)
-        
         activities_from_db = []
         with conn.cursor() as cur:
             cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain, polyline FROM activities ORDER BY start_date DESC LIMIT 10")
@@ -105,26 +65,19 @@ def strava_handler():
                 except exc.ObjectNotFound: pass
                 
                 activities_from_db.append({"name": r[1], "start_date_local": r[2].isoformat(), "moving_time": str(timedelta(seconds=int(r[3]))), "distance": r[4] * 1000, "total_elevation_gain": r[5], "map_polyline": r[6], "elevation_data": elevation_data, "zwift_world": None}) # zwift_world sera ajouté après
+
         conn.close()
 
-        for act in activities_from_db:
-             for strava_act in authed_client.get_activities(limit=10):
-                 if strava_act.id == act['id']:
-                     act['zwift_world'] = get_zwift_world(strava_act.name) if hasattr(strava_act, 'name') else None
-                     break
-
         fitness_summary, form_chart_data = get_fitness_data()
-        athlete = authed_client.get_athlete(); stats = authed_client.get_athlete_stats(athlete.id); ytd_distance = float(stats.ytd_ride_totals.distance) / 1000; yearly_summary = {"current": ytd_distance, "goal": 8000};
+        stats = authed_client.get_athlete_stats(athlete_id_strava); ytd_distance = float(stats.ytd_ride_totals.distance) / 1000; yearly_summary = {"current": ytd_distance, "goal": 8000};
         today = date.today(); start_of_week = today - timedelta(days=today.weekday()); weekly_distance = sum(act['distance'] / 1000 for act in activities_from_db if datetime.fromisoformat(act['start_date_local']).date() >= start_of_week); weekly_summary = {"current": weekly_distance, "goal": 200};
         
         return jsonify({
             "activities": activities_from_db,
             "goals": { "weekly": weekly_summary, "yearly": yearly_summary },
             "fitness_summary": fitness_summary,
-            "form_chart_data": form_chart_data,
-            "progression_data": progression_data
+            "form_chart_data": form_chart_data
         })
     except Exception as e:
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
-
