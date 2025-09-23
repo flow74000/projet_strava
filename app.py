@@ -1,4 +1,4 @@
-# Fichier: app.py (Version finale, RAPIDE et optimisée)
+# Fichier: app.py (Version finale, entièrement optimisée)
 
 import os
 import requests
@@ -11,9 +11,9 @@ from flask_cors import CORS
 from stravalib.client import Client
 from stravalib import exc
 
-# Imports pour l'API Google Fit
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
+# Imports pour l'API Google Fit (uniquement nécessaires dans le worker maintenant)
+# from google.oauth2.credentials import Credentials
+# from googleapiclient.discovery import build
 
 app = Flask(__name__)
 CORS(app)
@@ -21,8 +21,11 @@ CORS(app)
 
 # --- Fonctions de récupération de données ---
 
-def get_fitness_data():
-    """Récupère les données de forme depuis l'API Intervals.icu."""
+def get_fitness_data(latest_weight_from_db=None):
+    """
+    Récupère les données de forme depuis l'API Intervals.icu.
+    Prend en compte le poids de la base de données en priorité.
+    """
     try:
         athlete_id_icu = os.environ.get("INTERVALS_ATHLETE_ID")
         api_key = os.environ.get("INTERVALS_API_KEY")
@@ -45,11 +48,19 @@ def get_fitness_data():
             
         wellness_data.sort(key=lambda x: x['id'], reverse=True)
         latest_data = wellness_data[0]
-        last_known_weight = next((entry.get('weight') for entry in wellness_data if entry.get('weight') is not None), default_weight)
-        current_weight = latest_data.get('weight', last_known_weight)
+        
+        # Logique de poids : on priorise le poids de notre base de données
+        current_weight = latest_weight_from_db if latest_weight_from_db else default_weight
+        if latest_weight_from_db:
+             print(f"Utilisation du poids de la base de données : {current_weight} kg")
+        else:
+             print(f"Aucun poids trouvé en base, utilisation du poids par défaut : {current_weight} kg")
+
         ctl, atl = latest_data.get('ctl'), latest_data.get('atl')
         form = ctl - atl if ctl is not None and atl is not None else None
+        
         vo2max = ((0.01141 * pma + 0.435) / current_weight) * 1000 if current_weight and current_weight > 0 else None
+        
         wellness_data.sort(key=lambda x: x['id'])
         summary = {"fitness": round(ctl) if ctl is not None else None, "fatigue": round(atl) if atl is not None else None, "form": round(form) if form is not None else None, "vo2max": round(vo2max, 1) if vo2max is not None else None}
         return summary, wellness_data
@@ -60,7 +71,6 @@ def get_fitness_data():
 def get_annual_progress_by_month():
     """
     Lit les statistiques mensuelles pré-calculées depuis la base de données.
-    C'est maintenant une fonction très rapide !
     """
     print("Lecture des statistiques mensuelles depuis la base de données...")
     try:
@@ -74,58 +84,55 @@ def get_annual_progress_by_month():
         
         conn.close()
 
-        # Prépare un tableau de 12 mois avec des zéros
         monthly_distances = [0] * 12
-        # Remplit le tableau avec les données de la DB
         for row in results:
             month_index = row[0] - 1
             monthly_distances[month_index] = int(row[1])
 
         print(f"Statistiques mensuelles récupérées : {monthly_distances}")
         return monthly_distances
-
     except Exception as e:
         print(f"Erreur lors de la lecture des statistiques mensuelles : {e}")
         return [0] * 12
 
-def get_weight_data():
-    """Récupère les données de poids des 90 derniers jours depuis l'API Google Fit."""
-    SCOPES = ['https://www.googleapis.com/auth/fitness.body.read']
-    
-    token_path = '/etc/secrets/token.json' if os.path.exists('/etc/secrets/token.json') else 'token.json'
-
+def get_weight_history_from_db():
+    """
+    Lit TOUT l'historique de poids depuis la base de données pour la page Nutrition.
+    """
+    print("Lecture de l'historique de poids depuis la base de données...")
     try:
-        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-        fitness_service = build('fitness', 'v1', credentials=creds)
-
-        end_time = datetime.utcnow()
-        start_time = end_time - timedelta(days=90)
-        start_time_ns = int(start_time.timestamp() * 1e9)
-        end_time_ns = int(end_time.timestamp() * 1e9)
-        dataset_id = f"{start_time_ns}-{end_time_ns}"
-
-        response = fitness_service.users().dataSources().datasets().get(
-            userId='me',
-            dataSourceId='derived:com.google.weight:com.google.android.gms:merge_weight',
-            datasetId=dataset_id
-        ).execute()
-
-        weight_points = []
-        for point in response.get('point', []):
-            weight_kg = point['value'][0]['fpVal']
-            timestamp_s = int(point['startTimeNanos']) / 1e9
-            date_str = datetime.fromtimestamp(timestamp_s).strftime('%Y-%m-%d')
-            weight_points.append({'date': date_str, 'weight': round(weight_kg, 1)})
+        DATABASE_URL = os.environ.get('DATABASE_URL')
+        conn = psycopg2.connect(DATABASE_URL)
+        with conn.cursor() as cur:
+            # On récupère les 90 derniers jours pour garder le graphique lisible
+            cur.execute("SELECT measurement_date, weight_kg FROM weight_history ORDER BY measurement_date DESC LIMIT 90")
+            results = cur.fetchall()
+        conn.close()
         
-        weight_points.sort(key=lambda x: x['date'])
-        print(f"{len(weight_points)} points de données de poids récupérés depuis Google Fit.")
+        weight_points = [{'date': row[0].strftime('%Y-%m-%d'), 'weight': float(row[1])} for row in results]
+        weight_points.reverse() # On remet dans l'ordre chronologique pour le graphique
         return weight_points
+    except Exception as e:
+        print(f"Erreur lors de la lecture de l'historique de poids : {e}")
+        return None
 
-    except FileNotFoundError:
-        print("Fichier token.json introuvable. Veuillez lancer le script d'authentification.")
+def get_latest_weight_from_db():
+    """
+    Lit le poids le plus récent depuis la base de données pour le calcul de la VO2max.
+    """
+    try:
+        DATABASE_URL = os.environ.get('DATABASE_URL')
+        conn = psycopg2.connect(DATABASE_URL)
+        with conn.cursor() as cur:
+            cur.execute("SELECT weight_kg FROM weight_history ORDER BY measurement_date DESC LIMIT 1")
+            result = cur.fetchone()
+        conn.close()
+        
+        if result:
+            return float(result[0])
         return None
     except Exception as e:
-        print(f"Erreur lors de la récupération des données de poids depuis Google Fit: {e}")
+        print(f"Erreur lors de la lecture du dernier poids : {e}")
         return None
 
 
@@ -145,7 +152,7 @@ def serve_static_files(path):
 @app.route("/api/weight")
 def weight_api_handler():
     try:
-        weight_history = get_weight_data()
+        weight_history = get_weight_history_from_db()
         if weight_history is not None:
             return jsonify({"weightHistory": weight_history})
         else:
@@ -158,18 +165,13 @@ def weight_api_handler():
 def strava_handler():
     """
     Route API qui lit les données pré-synchronisées et les compile.
-    Cette fonction est maintenant beaucoup plus rapide !
     """
     try:
-        # Authentification Strava (reste nécessaire pour les stats et polylines)
         client = Client()
         token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=request.args.get('code'))
         authed_client = Client(access_token=token_response['access_token'])
         
-        # --- LA SYNCHRONISATION LENTE A ÉTÉ RETIRÉE D'ICI ---
         print("Lecture des données depuis la base de données...")
-
-        # Lecture des 10 dernières activités depuis la base de données
         DATABASE_URL = os.environ.get('DATABASE_URL')
         conn = psycopg2.connect(DATABASE_URL)
         with conn.cursor() as cur:
@@ -183,7 +185,6 @@ def strava_handler():
             ]
         conn.close()
         
-        # Le worker s'occupe des polylines, mais pour le détail on peut le faire ici
         if activities_from_db:
              try:
                 streams = authed_client.get_activity_streams(activities_from_db[0]['id'], types=['latlng', 'altitude', 'distance'])
@@ -193,9 +194,8 @@ def strava_handler():
                     activities_from_db[0]['elevation_data'] = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
              except exc.ObjectNotFound: pass
 
-
-        # Le reste du code qui compile les données est identique
-        fitness_summary, form_chart_data = get_fitness_data()
+        latest_weight = get_latest_weight_from_db()
+        fitness_summary, form_chart_data = get_fitness_data(latest_weight_from_db=latest_weight)
         
         athlete = authed_client.get_athlete()
         stats = authed_client.get_athlete_stats(athlete.id)
@@ -207,7 +207,6 @@ def strava_handler():
         weekly_distance = sum(act['distance'] / 1000 for act in activities_from_db if datetime.fromisoformat(act['start_date_local']).date() >= start_of_week)
         weekly_summary = {"current": weekly_distance, "goal": 200}
         
-        # On appelle la nouvelle fonction rapide qui ne prend plus d'argument
         annual_progress_data = get_annual_progress_by_month()
 
         return jsonify({
