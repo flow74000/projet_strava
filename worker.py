@@ -1,4 +1,4 @@
-# Fichier: worker.py (Version finale avec synchro Strava + Google Fit)
+# Fichier: worker.py (Version finale, robuste avec gestion des erreurs)
 
 import os
 import time
@@ -154,19 +154,33 @@ def sync_google_fit_weight(conn):
 
 if __name__ == '__main__':
     while True:
-        DATABASE_URL = os.environ.get('DATABASE_URL')
-        db_connection = None
         try:
-            db_connection = psycopg2.connect(DATABASE_URL)
-            # Le worker exécute maintenant ses 3 tâches principales
-            sync_strava_activities(db_connection)
-            update_monthly_stats(db_connection)
-            sync_google_fit_weight(db_connection)
+            print("\n--- DEBUT D'UN NOUVEAU CYCLE DE SYNCHRONISATION ---")
+            DATABASE_URL = os.environ.get('DATABASE_URL')
+            db_connection = None
+            try:
+                print("Connexion à la base de données...")
+                db_connection = psycopg2.connect(DATABASE_URL)
+                print("Connexion réussie.")
+                
+                # Exécution des tâches de synchronisation
+                sync_strava_activities(db_connection)
+                update_monthly_stats(db_connection)
+                sync_google_fit_weight(db_connection)
+
+            finally:
+                if db_connection:
+                    db_connection.close()
+                    print("Connexion à la base de données fermée.")
+            
+            print("--- CYCLE TERMINE ---")
+
         except Exception as e:
-            print(f"Erreur au niveau de la connexion à la base de données: {e}")
+            # Capture et affiche toute erreur imprévue pour ne pas faire planter le worker
+            print("!!! ERREUR CRITIQUE DANS LA BOUCLE PRINCIPALE DU WORKER !!!")
+            print(traceback.format_exc())
+
         finally:
-            if db_connection:
-                db_connection.close()
-        
-        print("Cycle de synchronisation terminé. Prochaine exécution dans 15 minutes...")
-        time.sleep(900)
+            # La pause de 15 minutes se fait dans tous les cas
+            print(f"Prochaine exécution vers {datetime.now() + timedelta(minutes=15)}")
+            time.sleep(900)
