@@ -53,7 +53,7 @@
 </head>
 <body>
     <div class="main-container">
-        <nav class="main-nav"><a href="#" class="active">Accueil</a><a href="#">Entrainement</a><a href="/nutrition.html">Nutrition</a><a href="#">Historique</a></nav>
+        <nav class="main-nav"><a href="#" class="active">Accueil</a><a href="/nutrition.html">Nutrition</a><a href="#">Entrainement</a><a href="#">Historique</a></nav>
         <div id="status-container" class="card" style="text-align: center; font-size: 1.2em; font-weight: bold; padding: 40px;">Chargement des données...</div>
         <div id="content-wrapper" style="display: none;">
             <div class="dashboard-header"><h1 >Mon Tableau de Bord</h1><div class="goals-container" id="goals-container"></div></div>
@@ -89,18 +89,15 @@
             renderActivityDetail(data.activities, selectedIndex);
             if (data.form_chart_data) { renderFitnessFatigueChart(data.form_chart_data); renderFormChart(data.form_chart_data); }
             
-            // --- BLOC CORRIGÉ ---
-            if (data.annualProgressData) { // On vérifie le bon nom de variable
+            if (data.annualProgressData) { 
                 document.getElementById('progression-card').style.display = 'block';
                 
-                // On crée l'objet attendu par la fonction du graphique
                 const chartData = {
                     current_year: data.annualProgressData,
                     previous_year: [] // On met un tableau vide car l'API ne fournit pas encore l'année N-1
                 };
                 renderProgressionChart(chartData);
             }
-            // --- FIN DU BLOC CORRIGÉ ---
 
             renderHistory(data.activities, selectedIndex);
             lucide.createIcons();
@@ -115,11 +112,11 @@
                 data: {
                     labels: labels,
                     datasets: [
-                        { label: `Année en cours (${new Date().getFullYear()})`, data: data.current_year, borderColor: 'var(--strava-orange)', backgroundColor: 'rgba(252, 82, 0, 0.1)', fill: true, tension: 0.3, borderWidth: 3 },
-                        { label: `Année précédente (${new Date().getFullYear() - 1})`, data: data.previous_year, borderColor: 'var(--gray-500)', borderDash: [5, 5], fill: false, tension: 0.3, borderWidth: 2 }
+                        { label: `Année en cours (${new Date().getFullYear()})`, data: data.current_year, borderColor: 'rgba(252, 76, 2, 0.8)', backgroundColor: 'rgba(252, 76, 2, 0.1)', fill: true, tension: 0.4, borderWidth: 2 },
+                        { label: `Année précédente (${new Date().getFullYear() - 1})`, data: data.previous_year, borderColor: 'var(--gray-500)', borderDash: [5, 5], fill: false, tension: 0.4, borderWidth: 2 }
                     ]
                 },
-                options: { responsive: true, maintainAspectRatio: false, scales: { y: { title: { display: true, text: 'Distance Cumulative (km)' } } }, plugins: { legend: { position: 'bottom' } } }
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { title: { display: true, text: 'Distance (km)' } } }, plugins: { legend: { position: 'bottom' } } }
             });
         }
 
