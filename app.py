@@ -157,9 +157,6 @@ def strava_handler():
         client = Client()
         token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=request.args.get('code'))
         
-        # --- LIGNE À AJOUTER TEMPORAIREMENT ---
-        print(token_response)
-        # ------------------------------------
 
         authed_client = Client(access_token=token_response['access_token'])
         
