@@ -1,4 +1,4 @@
-# Fichier: app.py (Version avec l'ajout temporaire du print pour le refresh_token)
+# Fichier: app.py (Version finale, RAPIDE et complète)
 
 import os
 import requests
@@ -17,6 +17,7 @@ from googleapiclient.discovery import build
 
 app = Flask(__name__)
 CORS(app)
+
 
 # --- Fonctions de récupération de données ---
 
@@ -119,16 +120,15 @@ def get_weight_data():
         print(f"Erreur lors de la récupération des données de poids depuis Google Fit: {e}")
         return None
 
+
 # --- Routes pour servir les pages HTML ---
 
 @app.route('/')
 def serve_index():
-    """Sert la page d'accueil par défaut."""
     return send_from_directory('.', 'activities.html')
 
 @app.route('/<path:path>')
 def serve_static_files(path):
-    """Sert n'importe quel fichier HTML demandé (ex: /nutrition.html)."""
     return send_from_directory('.', path)
 
 
@@ -136,7 +136,6 @@ def serve_static_files(path):
 
 @app.route("/api/weight")
 def weight_api_handler():
-    """Route API dédiée qui ne renvoie que l'historique de poids."""
     try:
         weight_history = get_weight_data()
         if weight_history is not None:
@@ -149,74 +148,44 @@ def weight_api_handler():
 
 @app.route("/api/strava")
 def strava_handler():
-    """Route API principale qui gère Strava et compile toutes les données pour la page d'accueil."""
+    """
+    Route API qui lit les données pré-synchronisées et les compile.
+    Cette fonction est maintenant beaucoup plus rapide !
+    """
     try:
-        DATABASE_URL = os.environ.get('DATABASE_URL')
-        conn = psycopg2.connect(DATABASE_URL)
-        
+        # Authentification Strava (reste nécessaire pour les stats et polylines)
         client = Client()
         token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=request.args.get('code'))
-        
-
         authed_client = Client(access_token=token_response['access_token'])
         
-        # Le reste du code est inchangé
-        print("Début de la synchronisation intelligente avec Strava...")
-        new_activities_found = 0
-        activities_iterator = authed_client.get_activities()
-        
-        with conn.cursor() as cur:
-            for activity in activities_iterator:
-                cur.execute("SELECT id FROM activities WHERE id = %s", (activity.id,))
-                if cur.fetchone():
-                    print(f"Activité {activity.id} déjà en base. Fin de la recherche.")
-                    break
-                
-                print(f"Nouvelle activité trouvée : {activity.name} ({activity.id})")
-                new_activities_found += 1
-                
-                streams = authed_client.get_activity_streams(activity.id, types=['latlng'])
-                encoded_polyline = polyline.encode(streams['latlng'].data) if streams and 'latlng' in streams else None
-                
-                moving_time_obj = getattr(activity, 'moving_time', None)
-                moving_time_seconds = int(moving_time_obj.total_seconds()) if hasattr(moving_time_obj, 'total_seconds') else 0
+        # --- LA SYNCHRONISATION LENTE A ÉTÉ RETIRÉE D'ICI ---
+        print("Lecture des données depuis la base de données...")
 
-                cur.execute(
-                    """
-                    INSERT INTO activities (id, name, start_date, distance, moving_time_seconds, elevation_gain, polyline)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (activity.id, activity.name, activity.start_date_local, 
-                     float(getattr(activity, 'distance', 0)) / 1000, 
-                     moving_time_seconds, 
-                     float(getattr(activity, 'total_elevation_gain', 0)), 
-                     encoded_polyline)
-                )
-        
-        if new_activities_found > 0:
-            conn.commit()
-            print(f"{new_activities_found} activité(s) ajoutée(s).")
-        else:
-            print("Base de données déjà à jour.")
-        
+        # Lecture des 10 dernières activités depuis la base de données
+        DATABASE_URL = os.environ.get('DATABASE_URL')
+        conn = psycopg2.connect(DATABASE_URL)
         with conn.cursor() as cur:
-            cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain, polyline FROM activities ORDER BY start_date DESC LIMIT 10")
+            # Note: on ne récupère plus la polyline ici pour accélérer
+            cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain FROM activities ORDER BY start_date DESC LIMIT 10")
             activities_from_db = [
                 {
                     "name": r[1], "id": r[0], "start_date_local": r[2].isoformat(),
                     "moving_time": str(timedelta(seconds=int(r[3]))), "distance": r[4] * 1000,
-                    "total_elevation_gain": r[5], "map_polyline": r[6], "elevation_data": None
+                    "total_elevation_gain": r[5]
                 } for r in cur.fetchall()
             ]
         conn.close()
 
-        for activity in activities_from_db:
-            try:
-                streams = authed_client.get_activity_streams(activity['id'], types=['distance', 'altitude'])
-                if streams and 'distance' in streams and 'altitude' in streams:
-                    activity['elevation_data'] = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
-            except exc.ObjectNotFound: pass
+        # Le worker s'occupe des polylines, mais pour le détail on peut le faire ici
+        if activities_from_db:
+             try:
+                streams = authed_client.get_activity_streams(activities_from_db[0]['id'], types=['latlng'])
+                if streams and 'latlng' in streams:
+                    activities_from_db[0]['map_polyline'] = polyline.encode(streams['latlng'].data)
+             except exc.ObjectNotFound: pass
 
+
+        # Le reste du code qui compile les données est identique
         fitness_summary, form_chart_data = get_fitness_data()
         
         athlete = authed_client.get_athlete()
