@@ -1,4 +1,4 @@
-# Fichier: app.py (Version finale, RAPIDE et complète)
+# Fichier: app.py (Version finale, RAPIDE et optimisée)
 
 import os
 import requests
@@ -57,27 +57,35 @@ def get_fitness_data():
         print(f"Erreur API Intervals.icu: {e}")
         return None, None
 
-def get_annual_progress_by_month(client):
-    """Calcule la distance Strava totale par mois pour l'année en cours."""
+def get_annual_progress_by_month():
+    """
+    Lit les statistiques mensuelles pré-calculées depuis la base de données.
+    C'est maintenant une fonction très rapide !
+    """
+    print("Lecture des statistiques mensuelles depuis la base de données...")
     try:
-        today = date.today()
-        start_of_year = datetime(today.year, 1, 1)
-        print(f"Récupération des activités Strava pour l'année {today.year}...")
-        activities = client.get_activities(after=start_of_year)
+        DATABASE_URL = os.environ.get('DATABASE_URL')
+        conn = psycopg2.connect(DATABASE_URL)
+        current_year = datetime.now().year
         
+        with conn.cursor() as cur:
+            cur.execute("SELECT month, distance FROM monthly_stats WHERE year = %s ORDER BY month", (current_year,))
+            results = cur.fetchall()
+        
+        conn.close()
+
+        # Prépare un tableau de 12 mois avec des zéros
         monthly_distances = [0] * 12
-        
-        for activity in activities:
-            month_index = activity.start_date_local.month - 1
-            distance_km = float(getattr(activity, 'distance', 0)) / 1000
-            monthly_distances[month_index] += distance_km
-            
-        monthly_distances = [round(d) for d in monthly_distances]
-        print(f"Distances mensuelles Strava calculées : {monthly_distances}")
+        # Remplit le tableau avec les données de la DB
+        for row in results:
+            month_index = row[0] - 1
+            monthly_distances[month_index] = int(row[1])
+
+        print(f"Statistiques mensuelles récupérées : {monthly_distances}")
         return monthly_distances
 
     except Exception as e:
-        print(f"Erreur lors du calcul de la progression annuelle Strava : {e}")
+        print(f"Erreur lors de la lecture des statistiques mensuelles : {e}")
         return [0] * 12
 
 def get_weight_data():
@@ -165,7 +173,6 @@ def strava_handler():
         DATABASE_URL = os.environ.get('DATABASE_URL')
         conn = psycopg2.connect(DATABASE_URL)
         with conn.cursor() as cur:
-            # Note: on ne récupère plus la polyline ici pour accélérer
             cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain FROM activities ORDER BY start_date DESC LIMIT 10")
             activities_from_db = [
                 {
@@ -175,13 +182,15 @@ def strava_handler():
                 } for r in cur.fetchall()
             ]
         conn.close()
-
+        
         # Le worker s'occupe des polylines, mais pour le détail on peut le faire ici
         if activities_from_db:
              try:
-                streams = authed_client.get_activity_streams(activities_from_db[0]['id'], types=['latlng'])
+                streams = authed_client.get_activity_streams(activities_from_db[0]['id'], types=['latlng', 'altitude', 'distance'])
                 if streams and 'latlng' in streams:
                     activities_from_db[0]['map_polyline'] = polyline.encode(streams['latlng'].data)
+                if streams and 'distance' in streams and 'altitude' in streams:
+                    activities_from_db[0]['elevation_data'] = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
              except exc.ObjectNotFound: pass
 
 
@@ -198,7 +207,8 @@ def strava_handler():
         weekly_distance = sum(act['distance'] / 1000 for act in activities_from_db if datetime.fromisoformat(act['start_date_local']).date() >= start_of_week)
         weekly_summary = {"current": weekly_distance, "goal": 200}
         
-        annual_progress_data = get_annual_progress_by_month(authed_client)
+        # On appelle la nouvelle fonction rapide qui ne prend plus d'argument
+        annual_progress_data = get_annual_progress_by_month()
 
         return jsonify({
             "activities": activities_from_db,
