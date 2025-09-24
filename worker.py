@@ -51,9 +51,9 @@ def sync_strava_activities(conn):
                     INSERT INTO activities (id, name, start_date, distance, moving_time_seconds, elevation_gain)
                     VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING
                     """,
-                    (activity.id, activity.name, activity.start_date_local, 
-                     float(getattr(activity, 'distance', 0)) / 1000, 
-                     moving_time_seconds, 
+                    (activity.id, activity.name, activity.start_date_local,
+                     float(getattr(activity, 'distance', 0)) / 1000,
+                     moving_time_seconds,
                      float(getattr(activity, 'total_elevation_gain', 0)))
                 )
         conn.commit()
