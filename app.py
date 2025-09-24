@@ -195,15 +195,22 @@ def weight_api_handler():
 def strava_handler():
     """Route API principale qui gère la connexion initiale et la compilation des données."""
     try:
+        authed_client = None
         code = request.args.get('code')
+        
+        # Si un "code" est dans l'URL, c'est une nouvelle connexion d'un utilisateur
         if code:
             print("Nouvelle authentification détectée, échange du code contre des tokens...")
             client = Client()
             token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=code)
-            print(token_response)
+            # On sauvegarde ces nouveaux tokens en base de données, ils deviennent la nouvelle référence
             save_strava_tokens_to_db(token_response)
+            authed_client = Client(access_token=token_response['access_token'])
         
-        authed_client = get_strava_client_from_db()
+        # Si pas de code, on utilise les tokens déjà en base
+        else:
+            authed_client = get_strava_client_from_db()
+
         if not authed_client:
             return jsonify({"error": "Authentification Strava échouée"}), 500
 
