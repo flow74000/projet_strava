@@ -5,11 +5,13 @@ import requests
 import traceback
 import psycopg2
 import polyline
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta, datetime, timezone
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from stravalib.client import Client
 from stravalib import exc
+from collections import defaultdict
+
 
 # Imports pour l'API Google Fit
 from google.oauth2.credentials import Credentials
