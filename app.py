@@ -149,7 +149,8 @@ def strava_handler():
         conn = psycopg2.connect(DATABASE_URL)
         with conn.cursor() as cur:
             cur.execute("SELECT MAX(start_date) FROM activities")
-            last_activity_date = cur.fetchone()[0]
+            result = cur.fetchone()
+            last_activity_date = result[0] if result else None
             
             activities_iterator = authed_client.get_activities(after=last_activity_date)
             new_activities = list(activities_iterator)
@@ -185,7 +186,7 @@ def strava_handler():
 
         # --- Compilation de toutes les données ---
         weight_history = get_weight_data()
-        latest_weight = weight_history[-1]['weight'] if weight_history else None
+        latest_weight = weight_history[-1]['weight'] if weight_history and len(weight_history) > 0 else None
         
         fitness_summary, form_chart_data = get_fitness_data(latest_weight=latest_weight)
         annual_progress_data = get_annual_progress_by_month(authed_client)
