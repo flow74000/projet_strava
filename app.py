@@ -141,11 +141,19 @@ def strava_handler():
         with conn.cursor() as cur:
             cur.execute("SELECT MAX(start_date) FROM activities")
             result = cur.fetchone()
-            # --- CORRECTION DU BUG ---
-            # Gère correctement le cas où la table est vide
+            
             last_activity_date = result[0] if result and result[0] is not None else None
             
-            activities_iterator = authed_client.get_activities(after=last_activity_date)
+            # --- CORRECTION AVEC MARGE DE SÉCURITÉ ---
+            sync_start_time = None
+            if last_activity_date:
+                # On recule de 5 minutes pour être sûr de ne rien manquer
+                sync_start_time = last_activity_date - timedelta(minutes=5)
+                print(f"Recherche des activités depuis : {sync_start_time}")
+            
+            activities_iterator = authed_client.get_activities(after=sync_start_time)
+            # --- FIN DE LA CORRECTION ---
+
             new_activities = list(activities_iterator)
 
             if new_activities:
@@ -164,6 +172,10 @@ def strava_handler():
             else:
                 print("Base de données Strava déjà à jour.")
 
+        # ... (le reste de la fonction est inchangé) ...
+        # ... assurez-vous de copier le reste de votre fonction ici ...
+        
+        # Le code ci-dessous est un exemple partiel, assurez-vous d'avoir la version complète
         with conn.cursor() as cur:
             cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain FROM activities ORDER BY start_date DESC LIMIT 10")
             activities_from_db = [{"name": r[1], "id": r[0], "start_date_local": r[2].isoformat(), "moving_time": str(timedelta(seconds=int(r[3]))), "distance": r[4] * 1000, "total_elevation_gain": r[5]} for r in cur.fetchall()]
