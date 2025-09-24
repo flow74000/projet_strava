@@ -204,6 +204,7 @@ def strava_handler():
             client = Client()
             token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=code)
             # On sauvegarde ces nouveaux tokens en base de données, ils deviennent la nouvelle référence
+            print(token_response)
             save_strava_tokens_to_db(token_response)
             authed_client = Client(access_token=token_response['access_token'])
         
