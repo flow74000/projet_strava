@@ -1,6 +1,7 @@
 stravalib
 Flask
 Flask-Cors
+Flask-Session
 gunicorn
 requests
 psycopg2-binary
