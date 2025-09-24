@@ -176,7 +176,7 @@ if __name__ == '__main__':
             print("--- CYCLE TERMINE ---")
 
         except Exception as e:
-            # Capture et affiche toute erreur imprévue pour ne pas faire planter le worker
+            # Capture et affiche toute erreur imprévue
             print("!!! ERREUR CRITIQUE DANS LA BOUCLE PRINCIPALE DU WORKER !!!")
             print(traceback.format_exc())
 
