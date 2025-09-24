@@ -5,7 +5,7 @@ import requests
 import traceback
 import psycopg2
 import polyline
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta, datetime, timezone
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from stravalib.client import Client
@@ -89,7 +89,7 @@ def get_weight_data():
         creds = Credentials.from_authorized_user_file(token_path, SCOPES)
         fitness_service = build('fitness', 'v1', credentials=creds)
 
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         start_time = end_time - timedelta(days=90)
         start_time_ns = int(start_time.timestamp() * 1e9)
         end_time_ns = int(end_time.timestamp() * 1e9)
