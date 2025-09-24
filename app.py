@@ -18,8 +18,11 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 app = Flask(__name__)
-CORS(app)
-
+cors = CORS(app, resources={
+    r"/api/*": {
+        "origins": "https://projet-strava.onrender.com"
+    }
+})
 # --- Fonctions de récupération de données ---
 
 def get_fitness_data():
