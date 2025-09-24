@@ -1,11 +1,11 @@
-# Fichier: app.py (Version finale, synchronisation à la demande, sans worker)
+# Fichier: app.py (Version finale, corrigée et simplifiée)
 
 import os
 import requests
 import traceback
 import psycopg2
 import polyline
-from datetime import date, timedelta, datetime, timezone
+from datetime import date, timedelta, datetime, timezone # Mise à jour de l'import
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from stravalib.client import Client
@@ -89,7 +89,7 @@ def get_weight_data():
         creds = Credentials.from_authorized_user_file(token_path, SCOPES)
         fitness_service = build('fitness', 'v1', credentials=creds)
 
-        end_time = datetime.now(timezone.utc)
+        end_time = datetime.now(timezone.utc) # Correction du DeprecationWarning
         start_time = end_time - timedelta(days=90)
         start_time_ns = int(start_time.timestamp() * 1e9)
         end_time_ns = int(end_time.timestamp() * 1e9)
@@ -111,20 +111,15 @@ def get_weight_data():
         return None
 
 # --- Routes pour servir les pages HTML ---
-
 @app.route('/')
-def serve_index():
-    return send_from_directory('.', 'activities.html')
+def serve_index(): return send_from_directory('.', 'activities.html')
 
 @app.route('/<path:path>')
-def serve_static_files(path):
-    return send_from_directory('.', path)
+def serve_static_files(path): return send_from_directory('.', path)
 
 # --- Routes API ---
-
 @app.route("/api/weight")
 def weight_api_handler():
-    """Route API pour la page Nutrition, appelle directement Google Fit."""
     try:
         weight_history = get_weight_data()
         return jsonify({"weightHistory": weight_history}) if weight_history is not None else (jsonify({"error": "Impossible de récupérer les données de poids"}), 500)
@@ -134,23 +129,21 @@ def weight_api_handler():
 
 @app.route("/api/strava")
 def strava_handler():
-    """
-    Route API principale qui gère TOUT : authentification, synchronisation et compilation des données.
-    """
+    """Route API principale qui gère TOUT : authentification, synchronisation et compilation des données."""
     try:
-        # --- Authentification Strava ---
         client = Client()
         token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=request.args.get('code'))
         authed_client = Client(access_token=token_response['access_token'])
         
-        # --- Synchronisation des activités Strava ---
         print("Début de la synchronisation intelligente avec Strava...")
         DATABASE_URL = os.environ.get('DATABASE_URL')
         conn = psycopg2.connect(DATABASE_URL)
         with conn.cursor() as cur:
             cur.execute("SELECT MAX(start_date) FROM activities")
             result = cur.fetchone()
-            last_activity_date = result[0] if result else None
+            # --- CORRECTION DU BUG ---
+            # Gère correctement le cas où la table est vide
+            last_activity_date = result[0] if result and result[0] is not None else None
             
             activities_iterator = authed_client.get_activities(after=last_activity_date)
             new_activities = list(activities_iterator)
@@ -171,7 +164,6 @@ def strava_handler():
             else:
                 print("Base de données Strava déjà à jour.")
 
-        # --- Lecture des données depuis la base de données ---
         with conn.cursor() as cur:
             cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain FROM activities ORDER BY start_date DESC LIMIT 10")
             activities_from_db = [{"name": r[1], "id": r[0], "start_date_local": r[2].isoformat(), "moving_time": str(timedelta(seconds=int(r[3]))), "distance": r[4] * 1000, "total_elevation_gain": r[5]} for r in cur.fetchall()]
@@ -184,7 +176,6 @@ def strava_handler():
                 if streams and 'distance' in streams and 'altitude' in streams: activities_from_db[0]['elevation_data'] = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
             except exc.ObjectNotFound: pass
 
-        # --- Compilation de toutes les données ---
         weight_history = get_weight_data()
         latest_weight = weight_history[-1]['weight'] if weight_history and len(weight_history) > 0 else None
         
@@ -201,13 +192,7 @@ def strava_handler():
         weekly_distance = sum(act['distance'] / 1000 for act in activities_from_db if datetime.fromisoformat(act['start_date_local']).date() >= start_of_week)
         weekly_summary = {"current": weekly_distance, "goal": 200}
 
-        return jsonify({
-            "activities": activities_from_db,
-            "goals": {"weekly": weekly_summary, "yearly": yearly_summary},
-            "fitness_summary": fitness_summary,
-            "form_chart_data": form_chart_data,
-            "annualProgressData": annual_progress_data
-        })
+        return jsonify({"activities": activities_from_db, "goals": {"weekly": weekly_summary, "yearly": yearly_summary}, "fitness_summary": fitness_summary, "form_chart_data": form_chart_data, "annualProgressData": annual_progress_data})
 
     except Exception as e:
         print(traceback.format_exc())
