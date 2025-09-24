@@ -240,3 +240,49 @@ def strava_handler():
     except Exception as e:
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
+    
+    from collections import defaultdict
+
+def get_all_years_progress():
+    """
+    Calcule la distance cumulative jour par jour pour chaque année depuis la base de données.
+    """
+    print("Calcul de la progression de toutes les années...")
+    try:
+        DATABASE_URL = os.environ.get('DATABASE_URL')
+        conn = psycopg2.connect(DATABASE_URL)
+        with conn.cursor() as cur:
+            cur.execute("SELECT EXTRACT(YEAR FROM start_date) as year, start_date, distance FROM activities WHERE distance > 0")
+            all_activities = cur.fetchall()
+        conn.close()
+
+        yearly_data = defaultdict(lambda: defaultdict(float))
+        
+        for year, start_date, distance in all_activities:
+            day_of_year = start_date.timetuple().tm_yday
+            yearly_data[int(year)][day_of_year] += float(distance)
+            
+        processed_data = {}
+        for year, daily_distances in yearly_data.items():
+            cumulative_distance = 0
+            year_progress = [0] * 366 # On utilise 366 pour gérer les années bissextiles
+            for day in range(1, 367):
+                cumulative_distance += daily_distances.get(day, 0)
+                year_progress[day-1] = round(cumulative_distance, 2)
+            processed_data[year] = year_progress
+            
+        return processed_data
+
+    except Exception as e:
+        print(f"Erreur lors du calcul de la progression multi-années : {e}")
+        return {}
+
+# Nouvelle route API pour ce graphique
+@app.route("/api/yearly_progress")
+def yearly_progress_handler():
+    try:
+        progress_data = get_all_years_progress()
+        return jsonify(progress_data)
+    except Exception as e:
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500

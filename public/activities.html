@@ -83,42 +83,89 @@
             fetch(`${API_URL}?code=${stravaCode}`).then(response => response.json().then(data => ({ ok: response.ok, data }))).then(({ ok, data }) => { if (!ok) throw new Error(data.error || 'Erreur inconnue du serveur'); statusContainer.style.display = 'none'; contentWrapper.style.display = 'block'; allActivitiesData = data.activities; renderPage(data); }).catch(error => { console.error("Erreur:", error); statusContainer.innerHTML = `<h1>Une erreur est survenue</h1><p>${error.message}</p>`; });
         });
 
-        function renderPage(data, selectedIndex = 0) {
-            renderGoals(data.goals);
-            renderFitnessSummary(data.fitness_summary);
-            renderActivityDetail(data.activities, selectedIndex);
-            if (data.form_chart_data) { renderFitnessFatigueChart(data.form_chart_data); renderFormChart(data.form_chart_data); }
-            
-            if (data.annualProgressData) { 
-                document.getElementById('progression-card').style.display = 'block';
-                
-                const chartData = {
-                    current_year: data.annualProgressData,
-                    previous_year: [] // On met un tableau vide car l'API ne fournit pas encore l'année N-1
-                };
-                renderProgressionChart(chartData);
-            }
 
-            renderHistory(data.activities, selectedIndex);
-            lucide.createIcons();
-        }
+function renderProgressionChart(data) {
+    if (progressionChart) { progressionChart.destroy(); }
+    const ctx = document.getElementById('progressionChart').getContext('2d');
 
-        function renderProgressionChart(data) {
-            if (progressionChart) { progressionChart.destroy(); }
-            const ctx = document.getElementById('progressionChart').getContext('2d');
-            const labels = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
-            progressionChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        { label: `Année en cours (${new Date().getFullYear()})`, data: data.current_year, borderColor: 'rgba(252, 76, 2, 0.8)', backgroundColor: 'rgba(252, 76, 2, 0.1)', fill: true, tension: 0.4, borderWidth: 2 },
-                        { label: `Année précédente (${new Date().getFullYear() - 1})`, data: data.previous_year, borderColor: 'var(--gray-500)', borderDash: [5, 5], fill: false, tension: 0.4, borderWidth: 2 }
-                    ]
+    const labels = [];
+    const startDate = new Date(new Date().getFullYear(), 0, 1);
+    for (let i = 0; i < 365; i++) {
+        const date = new Date(startDate);
+        date.setDate(startDate.getDate() + i);
+        labels.push(date);
+    }
+    
+    const colors = ['#3cb44b', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#e6194b'];
+    let colorIndex = 0;
+
+    const datasets = Object.keys(data).sort((a, b) => b - a).map(year => {
+        const yearData = data[year];
+        const isCurrentYear = year == new Date().getFullYear();
+        const color = isCurrentYear ? 'var(--strava-orange)' : colors[colorIndex++ % colors.length];
+
+        return {
+            label: year,
+            data: yearData,
+            borderColor: color,
+            borderWidth: isCurrentYear ? 3 : 1.5,
+            pointRadius: 0,
+            fill: isCurrentYear ? { target: 'origin', above: 'rgba(252, 82, 0, 0.1)' } : false,
+            tension: 0.1
+        };
+    });
+
+    progressionChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        unit: 'month',
+                        tooltipFormat: 'dd MMM'
+                    },
+                    title: { display: false }
                 },
-                options: { responsive: true, maintainAspectRatio: false, scales: { y: { title: { display: true, text: 'Distance (km)' } } }, plugins: { legend: { position: 'bottom' } } }
-            });
+                y: {
+                    title: { display: true, text: 'Distance Cumulative (km)' }
+                }
+            },
+            plugins: {
+                legend: { position: 'top', align: 'start', labels: { usePointStyle: true, boxWidth: 8 } }
+            }
         }
+    });
+}
+
+function renderPage(data, selectedIndex = 0) {
+    renderGoals(data.goals);
+    renderFitnessSummary(data.fitness_summary);
+    renderActivityDetail(data.activities, selectedIndex);
+    if (data.form_chart_data) {
+        renderFitnessFatigueChart(data.form_chart_data);
+        renderFormChart(data.form_chart_data);
+    }
+    
+    // On lance l'appel spécifique pour le graphique de progression
+    fetch("https://projet-strava-api.onrender.com/api/yearly_progress")
+        .then(response => response.json())
+        .then(progressData => {
+            if (Object.keys(progressData).length > 0) {
+                document.getElementById('progression-card').style.display = 'block';
+                renderProgressionChart(progressData);
+            }
+        });
+
+    renderHistory(data.activities, selectedIndex);
+    lucide.createIcons();
+}
 
         function renderGoals(goals) { if (!goals) return; const container = document.getElementById('goals-container'); container.innerHTML = ''; if (goals.weekly) { container.innerHTML += createGoalStat('weeklyGoal', 'Objectif Semaine', goals.weekly); } if (goals.yearly) { container.innerHTML += createGoalStat('yearlyGoal', 'Objectif Annuel', goals.yearly); } if (goals.weekly) weeklyGoalChart = renderGoalChart('weeklyGoalChart', goals.weekly, weeklyGoalChart); if (goals.yearly) yearlyGoalChart = renderGoalChart('yearlyGoalChart', goals.yearly, yearlyGoalChart); }
         function renderFitnessSummary(summary) { const container = document.getElementById('fitness-summary-cards'); if (!summary) return; const getFormClass = (form) => { if (form==null) return ''; if (form > 5) return 'text-blue-500'; if (form > -10) return 'text-green-500'; if (form > -25) return 'text-gray-500'; return 'text-red-500'; }; container.innerHTML = `${createSummaryCard('trending-up', 'Fitness', summary.fitness)}${createSummaryCard('battery-low', 'Fatigue', summary.fatigue)}${createSummaryCard('activity', 'Forme', summary.form, `font-bold ${getFormClass(summary.form)}`)}${createSummaryCard('zap', 'VO2max', summary.vo2max)}`;}
