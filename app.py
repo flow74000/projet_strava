@@ -1,4 +1,4 @@
-# Fichier: app.py (Version finale, entièrement optimisée)
+# Fichier: app.py (Version finale, entièrement optimisée avec token partagé)
 
 import os
 import requests
@@ -11,21 +11,72 @@ from flask_cors import CORS
 from stravalib.client import Client
 from stravalib import exc
 
-# Imports pour l'API Google Fit (uniquement nécessaires dans le worker maintenant)
-# from google.oauth2.credentials import Credentials
-# from googleapiclient.discovery import build
-
 app = Flask(__name__)
 CORS(app)
 
+# --- Fonctions de gestion des tokens Strava via la base de données ---
+
+def save_strava_tokens_to_db(token_dict):
+    """Enregistre ou met à jour les tokens Strava dans la base de données."""
+    print("Sauvegarde des nouveaux tokens Strava dans la DB...")
+    try:
+        DATABASE_URL = os.environ.get('DATABASE_URL')
+        conn = psycopg2.connect(DATABASE_URL)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE strava_tokens 
+                SET access_token = %s, refresh_token = %s, expires_at = %s 
+                WHERE id = 1
+                """,
+                (token_dict['access_token'], token_dict['refresh_token'], token_dict['expires_at'])
+            )
+        conn.commit()
+        conn.close()
+        print("Tokens Strava sauvegardés avec succès.")
+    except Exception as e:
+        print(f"Erreur lors de la sauvegarde des tokens: {e}")
+
+def get_strava_client_from_db():
+    """Crée un client Strava authentifié en utilisant les tokens stockés en DB."""
+    print("Récupération des tokens Strava depuis la DB...")
+    try:
+        DATABASE_URL = os.environ.get('DATABASE_URL')
+        conn = psycopg2.connect(DATABASE_URL)
+        with conn.cursor() as cur:
+            cur.execute("SELECT access_token, refresh_token, expires_at FROM strava_tokens WHERE id = 1")
+            token_data = cur.fetchone()
+        conn.close()
+
+        if not token_data: return None
+
+        client = Client()
+        client.access_token = token_data[0]
+        client.refresh_token = token_data[1]
+        client.token_expires_at = token_data[2]
+        
+        # Rafraîchir le token s'il est sur le point d'expirer (ou a expiré)
+        if datetime.now().timestamp() > client.token_expires_at:
+            print("Token Strava expiré, rafraîchissement...")
+            new_token = client.refresh_access_token(
+                client_id=os.environ.get("STRAVA_CLIENT_ID"),
+                client_secret=os.environ.get("STRAVA_CLIENT_SECRET"),
+                refresh_token=client.refresh_token
+            )
+            save_strava_tokens_to_db(new_token)
+            # Met à jour le client actuel avec le nouveau token
+            client.access_token = new_token['access_token']
+            print("Token rafraîchi et sauvegardé.")
+
+        return client
+    except Exception as e:
+        print(f"Erreur lors de la récupération du client Strava depuis la DB: {e}")
+        return None
 
 # --- Fonctions de récupération de données ---
 
 def get_fitness_data(latest_weight_from_db=None):
-    """
-    Récupère les données de forme depuis l'API Intervals.icu.
-    Prend en compte le poids de la base de données en priorité.
-    """
+    """Récupère les données de forme depuis l'API Intervals.icu."""
     try:
         athlete_id_icu = os.environ.get("INTERVALS_ATHLETE_ID")
         api_key = os.environ.get("INTERVALS_API_KEY")
@@ -49,7 +100,6 @@ def get_fitness_data(latest_weight_from_db=None):
         wellness_data.sort(key=lambda x: x['id'], reverse=True)
         latest_data = wellness_data[0]
         
-        # Logique de poids : on priorise le poids de notre base de données
         current_weight = latest_weight_from_db if latest_weight_from_db else default_weight
         if latest_weight_from_db:
              print(f"Utilisation du poids de la base de données : {current_weight} kg")
@@ -58,7 +108,6 @@ def get_fitness_data(latest_weight_from_db=None):
 
         ctl, atl = latest_data.get('ctl'), latest_data.get('atl')
         form = ctl - atl if ctl is not None and atl is not None else None
-        
         vo2max = ((0.01141 * pma + 0.435) / current_weight) * 1000 if current_weight and current_weight > 0 else None
         
         wellness_data.sort(key=lambda x: x['id'])
@@ -69,57 +118,46 @@ def get_fitness_data(latest_weight_from_db=None):
         return None, None
 
 def get_annual_progress_by_month():
-    """
-    Lit les statistiques mensuelles pré-calculées depuis la base de données.
-    """
+    """Lit les statistiques mensuelles pré-calculées depuis la base de données."""
     print("Lecture des statistiques mensuelles depuis la base de données...")
     try:
         DATABASE_URL = os.environ.get('DATABASE_URL')
         conn = psycopg2.connect(DATABASE_URL)
         current_year = datetime.now().year
-        
         with conn.cursor() as cur:
             cur.execute("SELECT month, distance FROM monthly_stats WHERE year = %s ORDER BY month", (current_year,))
             results = cur.fetchall()
-        
         conn.close()
 
         monthly_distances = [0] * 12
         for row in results:
             month_index = row[0] - 1
             monthly_distances[month_index] = int(row[1])
-
-        print(f"Statistiques mensuelles récupérées : {monthly_distances}")
         return monthly_distances
     except Exception as e:
         print(f"Erreur lors de la lecture des statistiques mensuelles : {e}")
         return [0] * 12
 
 def get_weight_history_from_db():
-    """
-    Lit TOUT l'historique de poids depuis la base de données pour la page Nutrition.
-    """
+    """Lit l'historique de poids depuis la base de données pour la page Nutrition."""
     print("Lecture de l'historique de poids depuis la base de données...")
     try:
         DATABASE_URL = os.environ.get('DATABASE_URL')
         conn = psycopg2.connect(DATABASE_URL)
         with conn.cursor() as cur:
-            # On récupère les 90 derniers jours pour garder le graphique lisible
             cur.execute("SELECT measurement_date, weight_kg FROM weight_history ORDER BY measurement_date DESC LIMIT 90")
             results = cur.fetchall()
         conn.close()
         
         weight_points = [{'date': row[0].strftime('%Y-%m-%d'), 'weight': float(row[1])} for row in results]
-        weight_points.reverse() # On remet dans l'ordre chronologique pour le graphique
+        weight_points.reverse()
         return weight_points
     except Exception as e:
         print(f"Erreur lors de la lecture de l'historique de poids : {e}")
         return None
 
 def get_latest_weight_from_db():
-    """
-    Lit le poids le plus récent depuis la base de données pour le calcul de la VO2max.
-    """
+    """Lit le poids le plus récent depuis la base de données pour la VO2max."""
     try:
         DATABASE_URL = os.environ.get('DATABASE_URL')
         conn = psycopg2.connect(DATABASE_URL)
@@ -127,14 +165,10 @@ def get_latest_weight_from_db():
             cur.execute("SELECT weight_kg FROM weight_history ORDER BY measurement_date DESC LIMIT 1")
             result = cur.fetchone()
         conn.close()
-        
-        if result:
-            return float(result[0])
-        return None
+        return float(result[0]) if result else None
     except Exception as e:
         print(f"Erreur lors de la lecture du dernier poids : {e}")
         return None
-
 
 # --- Routes pour servir les pages HTML ---
 
@@ -146,53 +180,46 @@ def serve_index():
 def serve_static_files(path):
     return send_from_directory('.', path)
 
-
 # --- Routes API pour les données ---
 
 @app.route("/api/weight")
 def weight_api_handler():
     try:
         weight_history = get_weight_history_from_db()
-        if weight_history is not None:
-            return jsonify({"weightHistory": weight_history})
-        else:
-            return jsonify({"error": "Impossible de récupérer les données de poids"}), 500
+        return jsonify({"weightHistory": weight_history}) if weight_history is not None else (jsonify({"error": "Impossible de récupérer les données de poids"}), 500)
     except Exception as e:
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 @app.route("/api/strava")
 def strava_handler():
-    """
-    Route API qui lit les données pré-synchronisées et les compile.
-    """
+    """Route API principale qui gère la connexion initiale et la compilation des données."""
     try:
-        client = Client()
-        token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=request.args.get('code'))
-        authed_client = Client(access_token=token_response['access_token'])
+        code = request.args.get('code')
+        if code:
+            print("Nouvelle authentification détectée, échange du code contre des tokens...")
+            client = Client()
+            token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=code)
+            save_strava_tokens_to_db(token_response)
         
-        print("Lecture des données depuis la base de données...")
+        authed_client = get_strava_client_from_db()
+        if not authed_client:
+            return jsonify({"error": "Authentification Strava échouée"}), 500
+
+        print("Lecture des activités depuis la base de données...")
         DATABASE_URL = os.environ.get('DATABASE_URL')
         conn = psycopg2.connect(DATABASE_URL)
         with conn.cursor() as cur:
             cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain FROM activities ORDER BY start_date DESC LIMIT 10")
-            activities_from_db = [
-                {
-                    "name": r[1], "id": r[0], "start_date_local": r[2].isoformat(),
-                    "moving_time": str(timedelta(seconds=int(r[3]))), "distance": r[4] * 1000,
-                    "total_elevation_gain": r[5]
-                } for r in cur.fetchall()
-            ]
+            activities_from_db = [{"name": r[1], "id": r[0], "start_date_local": r[2].isoformat(), "moving_time": str(timedelta(seconds=int(r[3]))), "distance": r[4] * 1000, "total_elevation_gain": r[5]} for r in cur.fetchall()]
         conn.close()
         
         if activities_from_db:
-             try:
+            try:
                 streams = authed_client.get_activity_streams(activities_from_db[0]['id'], types=['latlng', 'altitude', 'distance'])
-                if streams and 'latlng' in streams:
-                    activities_from_db[0]['map_polyline'] = polyline.encode(streams['latlng'].data)
-                if streams and 'distance' in streams and 'altitude' in streams:
-                    activities_from_db[0]['elevation_data'] = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
-             except exc.ObjectNotFound: pass
+                if streams and 'latlng' in streams: activities_from_db[0]['map_polyline'] = polyline.encode(streams['latlng'].data)
+                if streams and 'distance' in streams and 'altitude' in streams: activities_from_db[0]['elevation_data'] = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
+            except exc.ObjectNotFound: pass
 
         latest_weight = get_latest_weight_from_db()
         fitness_summary, form_chart_data = get_fitness_data(latest_weight_from_db=latest_weight)
@@ -211,7 +238,7 @@ def strava_handler():
 
         return jsonify({
             "activities": activities_from_db,
-            "goals": { "weekly": weekly_summary, "yearly": yearly_summary },
+            "goals": {"weekly": weekly_summary, "yearly": yearly_summary},
             "fitness_summary": fitness_summary,
             "form_chart_data": form_chart_data,
             "annualProgressData": annual_progress_data

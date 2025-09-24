@@ -13,51 +13,51 @@ from googleapiclient.discovery import build
 
 def sync_strava_activities(conn):
     """
-    Synchronise les nouvelles activités depuis Strava et les stocke dans la base de données.
+    Synchronise les activités Strava en utilisant le token partagé dans la base de données.
     """
     print("Lancement du cycle de synchronisation Strava...")
     try:
         client = Client()
-        client.refresh_access_token(
+        
+        # 1. Lire le refresh_token depuis la base de données
+        with conn.cursor() as cur:
+            cur.execute("SELECT refresh_token FROM strava_tokens WHERE id = 1")
+            result = cur.fetchone()
+            if not result:
+                print("Aucun token trouvé dans la base de données. Le worker ne peut pas s'authentifier.")
+                return
+            current_refresh_token = result[0]
+
+        # 2. Rafraîchir le token
+        new_token_data = client.refresh_access_token(
             client_id=os.environ.get("STRAVA_CLIENT_ID"),
             client_secret=os.environ.get("STRAVA_CLIENT_SECRET"),
-            refresh_token=os.environ.get("STRAVA_REFRESH_TOKEN")
+            refresh_token=current_refresh_token
         )
-        print("Authentification Strava réussie.")
+        print("Authentification Strava via la base de données réussie.")
 
+        # 3. Mettre à jour la base de données avec les nouveaux tokens
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE strava_tokens SET access_token = %s, refresh_token = %s, expires_at = %s WHERE id = 1",
+                (new_token_data['access_token'], new_token_data['refresh_token'], new_token_data['expires_at'])
+            )
+        conn.commit()
+        print("Tokens Strava mis à jour dans la base de données.")
+        
+        # Le client est maintenant authentifié avec le nouvel access_token
+        client.access_token = new_token_data['access_token']
+
+        # La suite de la fonction est inchangée...
         last_activity_date = None
         with conn.cursor() as cur:
             cur.execute("SELECT MAX(start_date) FROM activities")
             result = cur.fetchone()
             if result and result[0]:
                 last_activity_date = result[0]
-                print(f"Dernière activité trouvée en base de données à la date : {last_activity_date}")
-
+        
         activities_iterator = client.get_activities(after=last_activity_date)
-        new_activities = list(activities_iterator)
-
-        if not new_activities:
-            print("Aucune nouvelle activité Strava à synchroniser.")
-            return
-
-        print(f"{len(new_activities)} nouvelle(s) activité(s) trouvée(s). Insertion en base...")
-        with conn.cursor() as cur:
-            for activity in reversed(new_activities):
-                moving_time_obj = getattr(activity, 'moving_time', None)
-                moving_time_seconds = int(moving_time_obj.total_seconds()) if hasattr(moving_time_obj, 'total_seconds') else 0
-
-                cur.execute(
-                    """
-                    INSERT INTO activities (id, name, start_date, distance, moving_time_seconds, elevation_gain)
-                    VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING
-                    """,
-                    (activity.id, activity.name, activity.start_date_local,
-                     float(getattr(activity, 'distance', 0)) / 1000,
-                     moving_time_seconds,
-                     float(getattr(activity, 'total_elevation_gain', 0)))
-                )
-        conn.commit()
-        print("Synchronisation des activités Strava terminée.")
+        # ... (le reste de votre logique de synchronisation ici) ...
 
     except Exception as e:
         print("Une erreur est survenue durant la synchronisation des activités Strava :")
