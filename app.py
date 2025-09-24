@@ -200,6 +200,7 @@ def strava_handler():
             print("Nouvelle authentification détectée, échange du code contre des tokens...")
             client = Client()
             token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=code)
+            print(token_response)
             save_strava_tokens_to_db(token_response)
         
         authed_client = get_strava_client_from_db()
