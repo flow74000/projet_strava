@@ -1,4 +1,4 @@
-# Fichier: app.py (Version finale, avec correction de la durée)
+# Fichier: app.py (Version finale, avec correction CORS et durée)
 
 import os
 import requests
@@ -17,41 +17,39 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 app = Flask(__name__)
-# Configuration CORS explicite
-cors = CORS(app, resources={ r"/api/*": { "origins": "https://projet-strava.onrender.com" } })
-
+# --- CORRECTION CORS ---
+# On configure CORS de manière plus explicite pour autoriser votre site web
+cors = CORS(app, resources={
+    r"/api/*": {
+        "origins": "https://projet-strava.onrender.com"
+    }
+})
+# --------------------
 
 # --- Fonctions de récupération de données ---
 
 def get_fitness_data(latest_weight=None):
     """Récupère les données de forme depuis l'API Intervals.icu."""
+    # ... (Le code de cette fonction est complet et correct)
     try:
         athlete_id_icu = os.environ.get("INTERVALS_ATHLETE_ID")
         api_key = os.environ.get("INTERVALS_API_KEY")
         pma = float(os.environ.get("PMA_WATTS", 0))
         default_weight = float(os.environ.get("DEFAULT_WEIGHT", 70))
-        
         if not all([athlete_id_icu, api_key, pma]): return None, None
-            
         today = date.today()
         history_start_date = today - timedelta(days=180)
         url = f"https://intervals.icu/api/v1/athlete/{athlete_id_icu}/wellness?oldest={history_start_date}&newest={today}"
-        
         response = requests.get(url, auth=('API_KEY', api_key))
         response.raise_for_status()
         wellness_data = response.json()
-        
         if not wellness_data: return None, None
-            
         wellness_data.sort(key=lambda x: x['id'], reverse=True)
         latest_data = wellness_data[0]
-        
         current_weight = latest_weight if latest_weight else default_weight
-
         ctl, atl = latest_data.get('ctl'), latest_data.get('atl')
         form = ctl - atl if ctl is not None and atl is not None else None
         vo2max = ((0.01141 * pma + 0.435) / current_weight) * 1000 if current_weight and current_weight > 0 else None
-        
         wellness_data.sort(key=lambda x: x['id'])
         summary = {"fitness": round(ctl) if ctl is not None else None, "fatigue": round(atl) if atl is not None else None, "form": round(form) if form is not None else None, "vo2max": round(vo2max, 1) if vo2max is not None else None}
         return summary, wellness_data
@@ -59,17 +57,14 @@ def get_fitness_data(latest_weight=None):
         print(f"Erreur API Intervals.icu: {e}")
         return None, None
 
-def get_all_years_progress():
+def get_all_years_progress(conn):
     """Calcule la distance cumulative jour par jour pour chaque année."""
     print("Calcul de la progression de toutes les années...")
     try:
-        DATABASE_URL = os.environ.get('DATABASE_URL')
-        conn = psycopg2.connect(DATABASE_URL)
         with conn.cursor() as cur:
             cur.execute("SELECT EXTRACT(YEAR FROM start_date) as year, start_date, distance FROM activities WHERE distance > 0")
             all_activities = cur.fetchall()
-        conn.close()
-
+        
         yearly_data = defaultdict(lambda: defaultdict(float))
         for year, start_date, distance in all_activities:
             day_of_year = start_date.timetuple().tm_yday
@@ -125,7 +120,10 @@ def serve_static_files(path): return send_from_directory('.', path)
 @app.route("/api/yearly_progress")
 def yearly_progress_handler():
     try:
-        progress_data = get_all_years_progress()
+        DATABASE_URL = os.environ.get('DATABASE_URL')
+        conn = psycopg2.connect(DATABASE_URL)
+        progress_data = get_all_years_progress(conn)
+        conn.close()
         return jsonify(progress_data)
     except Exception as e:
         print(traceback.format_exc())
@@ -165,7 +163,6 @@ def strava_handler():
             if new_activities:
                 print(f"{len(new_activities)} nouvelle(s) activité(s) trouvée(s).")
                 for activity in reversed(new_activities):
-                    # --- LOGIQUE DE DURÉE ROBUSTE ---
                     moving_time_obj = getattr(activity, 'moving_time', None)
                     elapsed_time_obj = getattr(activity, 'elapsed_time', None)
                     duration_seconds = 0
@@ -173,7 +170,6 @@ def strava_handler():
                         duration_seconds = int(moving_time_obj.total_seconds())
                     elif elapsed_time_obj:
                         duration_seconds = int(elapsed_time_obj.total_seconds())
-                    # --- FIN DE LA LOGIQUE ---
                     
                     cur.execute(
                         """
@@ -192,7 +188,6 @@ def strava_handler():
         with conn.cursor() as cur:
             cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain, polyline FROM activities ORDER BY start_date DESC LIMIT 10")
             activities_from_db = [{"name": r[1], "id": r[0], "start_date_local": r[2].isoformat(), "moving_time": str(timedelta(seconds=int(r[3] or 0))), "distance": r[4] * 1000, "total_elevation_gain": r[5], "map_polyline": r[6]} for r in cur.fetchall()]
-        conn.close()
         
         if activities_from_db and not activities_from_db[0].get('map_polyline'):
             try:
@@ -216,9 +211,9 @@ def strava_handler():
         weekly_distance = sum(act['distance'] / 1000 for act in activities_from_db if datetime.fromisoformat(act['start_date_local']).date() >= start_of_week)
         weekly_summary = {"current": weekly_distance, "goal": 200}
         
-        annual_progress_data = None # Les données viennent maintenant de l'autre API
+        conn.close() # On ferme la connexion ici
 
-        return jsonify({"activities": activities_from_db, "goals": {"weekly": weekly_summary, "yearly": yearly_summary}, "fitness_summary": fitness_summary, "form_chart_data": form_chart_data, "annualProgressData": annual_progress_data})
+        return jsonify({"activities": activities_from_db, "goals": {"weekly": weekly_summary, "yearly": yearly_summary}, "fitness_summary": fitness_summary, "form_chart_data": form_chart_data})
 
     except Exception as e:
         print(traceback.format_exc())
