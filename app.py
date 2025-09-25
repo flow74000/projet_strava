@@ -152,75 +152,82 @@ def weight_api_handler():
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
+# Dans app.py, remplacez la fonction strava_handler
+
 @app.route("/api/strava")
 def strava_handler():
-    """Route API principale qui gère Strava et compile toutes les données pour la page d'accueil."""
+    """
+    Route API principale qui gère TOUT : authentification, synchronisation et compilation des données.
+    """
     try:
-        DATABASE_URL = os.environ.get('DATABASE_URL')
-        conn = psycopg2.connect(DATABASE_URL)
-        
         client = Client()
         token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=request.args.get('code'))
-        access_token = token_response['access_token']
-        authed_client = Client(access_token=access_token)
+        authed_client = Client(access_token=token_response['access_token'])
         
         print("Début de la synchronisation intelligente avec Strava...")
-        new_activities_found = 0
-        activities_iterator = authed_client.get_activities()
-        
+        DATABASE_URL = os.environ.get('DATABASE_URL')
+        conn = psycopg2.connect(DATABASE_URL)
         with conn.cursor() as cur:
-            for activity in activities_iterator:
-                cur.execute("SELECT id FROM activities WHERE id = %s", (activity.id,))
-                if cur.fetchone():
-                    print(f"Activité {activity.id} déjà en base. Fin de la recherche.")
-                    break
-                
-                print(f"Nouvelle activité trouvée : {activity.name} ({activity.id})")
-                new_activities_found += 1
-                
-                streams = authed_client.get_activity_streams(activity.id, types=['latlng'])
-                encoded_polyline = polyline.encode(streams['latlng'].data) if streams and 'latlng' in streams else None
-                
-                moving_time_obj = getattr(activity, 'moving_time', None)
-                moving_time_seconds = int(moving_time_obj.total_seconds()) if hasattr(moving_time_obj, 'total_seconds') else 0
+            cur.execute("SELECT MAX(start_date) FROM activities")
+            result = cur.fetchone()
+            last_activity_date = result[0] if result and result[0] is not None else None
+            
+            sync_start_time = None
+            if last_activity_date:
+                sync_start_time = last_activity_date - timedelta(minutes=5)
+            
+            activities_iterator = authed_client.get_activities(after=sync_start_time)
+            new_activities = list(activities_iterator)
 
-                cur.execute(
-                    """
-                    INSERT INTO activities (id, name, start_date, distance, moving_time_seconds, elevation_gain, polyline)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (activity.id, activity.name, activity.start_date_local, 
-                     float(getattr(activity, 'distance', 0)) / 1000, 
-                     moving_time_seconds, 
-                     float(getattr(activity, 'total_elevation_gain', 0)), 
-                     encoded_polyline)
-                )
-        
-        if new_activities_found > 0:
-            conn.commit()
-            print(f"{new_activities_found} activité(s) ajoutée(s).")
-        else:
-            print("Base de données déjà à jour.")
-        
+            if new_activities:
+                print(f"{len(new_activities)} nouvelle(s) activité(s) trouvée(s).")
+                for activity in reversed(new_activities):
+                    
+                    # --- CORRECTION DE LA LOGIQUE DE DURÉE ---
+                    moving_time_obj = getattr(activity, 'moving_time', None)
+                    elapsed_time_obj = getattr(activity, 'elapsed_time', None)
+                    
+                    duration_seconds = 0
+                    if moving_time_obj:
+                        duration_seconds = int(moving_time_obj.total_seconds())
+                    elif elapsed_time_obj:
+                        # On utilise le temps écoulé si le temps de déplacement n'existe pas
+                        duration_seconds = int(elapsed_time_obj.total_seconds())
+                    # --- FIN DE LA CORRECTION ---
+
+                    cur.execute(
+                        """
+                        INSERT INTO activities (id, name, start_date, distance, moving_time_seconds, elevation_gain)
+                        VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE 
+                        SET moving_time_seconds = EXCLUDED.moving_time_seconds;
+                        """,
+                        (activity.id, activity.name, activity.start_date_local, 
+                         float(getattr(activity, 'distance', 0)) / 1000, 
+                         duration_seconds, # On utilise la nouvelle variable
+                         float(getattr(activity, 'total_elevation_gain', 0)))
+                    )
+                conn.commit()
+            else:
+                print("Base de données Strava déjà à jour.")
+
+        # Le reste de la fonction est inchangé...
         with conn.cursor() as cur:
-            cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain, polyline FROM activities ORDER BY start_date DESC LIMIT 10")
-            activities_from_db = [
-                {
-                    "name": r[1], "id": r[0], "start_date_local": r[2].isoformat(),
-                    "moving_time": str(timedelta(seconds=int(r[3]))), "distance": r[4] * 1000,
-                    "total_elevation_gain": r[5], "map_polyline": r[6], "elevation_data": None
-                } for r in cur.fetchall()
-            ]
+            cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain FROM activities ORDER BY start_date DESC LIMIT 10")
+            activities_from_db = [{"name": r[1], "id": r[0], "start_date_local": r[2].isoformat(), "moving_time": str(timedelta(seconds=int(r[3] or 0))), "distance": r[4] * 1000, "total_elevation_gain": r[5]} for r in cur.fetchall()]
         conn.close()
-
-        for activity in activities_from_db:
+        
+        if activities_from_db:
             try:
-                streams = authed_client.get_activity_streams(activity['id'], types=['distance', 'altitude'])
-                if streams and 'distance' in streams and 'altitude' in streams:
-                    activity['elevation_data'] = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
+                streams = authed_client.get_activity_streams(activities_from_db[0]['id'], types=['latlng', 'altitude', 'distance'])
+                if streams and 'latlng' in streams: activities_from_db[0]['map_polyline'] = polyline.encode(streams['latlng'].data)
+                if streams and 'distance' in streams and 'altitude' in streams: activities_from_db[0]['elevation_data'] = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
             except exc.ObjectNotFound: pass
 
-        fitness_summary, form_chart_data = get_fitness_data()
+        weight_history = get_weight_data()
+        latest_weight = weight_history[-1]['weight'] if weight_history and len(weight_history) > 0 else None
+        
+        fitness_summary, form_chart_data = get_fitness_data(latest_weight=latest_weight)
+        annual_progress_data = get_annual_progress_by_month(authed_client)
         
         athlete = authed_client.get_athlete()
         stats = authed_client.get_athlete_stats(athlete.id)
@@ -231,16 +238,8 @@ def strava_handler():
         start_of_week = today - timedelta(days=today.weekday())
         weekly_distance = sum(act['distance'] / 1000 for act in activities_from_db if datetime.fromisoformat(act['start_date_local']).date() >= start_of_week)
         weekly_summary = {"current": weekly_distance, "goal": 200}
-        
-        annual_progress_data = get_annual_progress_by_month(authed_client)
 
-        return jsonify({
-            "activities": activities_from_db,
-            "goals": { "weekly": weekly_summary, "yearly": yearly_summary },
-            "fitness_summary": fitness_summary,
-            "form_chart_data": form_chart_data,
-            "annualProgressData": annual_progress_data
-        })
+        return jsonify({"activities": activities_from_db, "goals": {"weekly": weekly_summary, "yearly": yearly_summary}, "fitness_summary": fitness_summary, "form_chart_data": form_chart_data, "annualProgressData": annual_progress_data})
 
     except Exception as e:
         print(traceback.format_exc())
