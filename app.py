@@ -1,4 +1,4 @@
-# Fichier: app.py (Version finale, avec correction CORS et durée)
+# Fichier: app.py (Version finale, avec toutes les corrections)
 
 import os
 import requests
@@ -17,20 +17,18 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 app = Flask(__name__)
-# --- CORRECTION CORS ---
-# On configure CORS de manière plus explicite pour autoriser votre site web
+# --- CONFIGURATION CORS CORRECTE ---
 cors = CORS(app, resources={
     r"/api/*": {
         "origins": "https://projet-strava.onrender.com"
     }
 })
-# --------------------
+# ------------------------------------
 
 # --- Fonctions de récupération de données ---
 
 def get_fitness_data(latest_weight=None):
     """Récupère les données de forme depuis l'API Intervals.icu."""
-    # ... (Le code de cette fonction est complet et correct)
     try:
         athlete_id_icu = os.environ.get("INTERVALS_ATHLETE_ID")
         api_key = os.environ.get("INTERVALS_API_KEY")
@@ -203,17 +201,14 @@ def strava_handler():
         
         athlete = authed_client.get_athlete()
         stats = authed_client.get_athlete_stats(athlete.id)
-        ytd_distance = float(stats.ytd_ride_totals.distance) / 1000
-        yearly_summary = {"current": ytd_distance, "goal": 8000}
         
-        today = date.today()
-        start_of_week = today - timedelta(days=today.weekday())
-        weekly_distance = sum(act['distance'] / 1000 for act in activities_from_db if datetime.fromisoformat(act['start_date_local']).date() >= start_of_week)
-        weekly_summary = {"current": weekly_distance, "goal": 200}
-        
-        conn.close() # On ferme la connexion ici
+        conn.close()
 
-        return jsonify({"activities": activities_from_db, "goals": {"weekly": weekly_summary, "yearly": yearly_summary}, "fitness_summary": fitness_summary, "form_chart_data": form_chart_data})
+        return jsonify({
+            "activities": activities_from_db,
+            "fitness_summary": fitness_summary,
+            "form_chart_data": form_chart_data,
+        })
 
     except Exception as e:
         print(traceback.format_exc())
