@@ -1,4 +1,4 @@
-# Fichier: app.py (Version finale, avec toutes les corrections)
+# Fichier: app.py (Version finale, avec toutes les corrections, y compris CORS)
 
 import os
 import requests
@@ -17,13 +17,13 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 app = Flask(__name__)
-# --- CONFIGURATION CORS CORRECTE ---
+# --- CONFIGURATION CORS CORRECTE ET DÉFINITIVE ---
 cors = CORS(app, resources={
     r"/api/*": {
         "origins": "https://projet-strava.onrender.com"
     }
 })
-# ------------------------------------
+# -------------------------------------------------
 
 # --- Fonctions de récupération de données ---
 
