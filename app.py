@@ -1,4 +1,4 @@
-# Fichier: app.py (Version finale, avec toutes les corrections, y compris CORS)
+# Fichier: app.py (Version finale, optimisée pour la mémoire)
 
 import os
 import requests
@@ -17,13 +17,12 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 app = Flask(__name__)
-# --- CONFIGURATION CORS CORRECTE ET DÉFINITIVE ---
+# Configuration CORS explicite
 cors = CORS(app, resources={
     r"/api/*": {
         "origins": "https://projet-strava.onrender.com"
     }
 })
-# -------------------------------------------------
 
 # --- Fonctions de récupération de données ---
 
@@ -156,33 +155,69 @@ def strava_handler():
                 sync_start_time = last_activity_date - timedelta(minutes=5)
             
             activities_iterator = authed_client.get_activities(after=sync_start_time)
-            new_activities = list(activities_iterator)
+            
+            # --- OPTIMISATION DE LA MÉMOIRE ---
+            batch = []
+            batch_size = 50 # On traite les activités par lots de 50
+            total_synced = 0
 
-            if new_activities:
-                print(f"{len(new_activities)} nouvelle(s) activité(s) trouvée(s).")
-                for activity in reversed(new_activities):
-                    moving_time_obj = getattr(activity, 'moving_time', None)
-                    elapsed_time_obj = getattr(activity, 'elapsed_time', None)
-                    duration_seconds = 0
-                    if moving_time_obj:
-                        duration_seconds = int(moving_time_obj.total_seconds())
-                    elif elapsed_time_obj:
-                        duration_seconds = int(elapsed_time_obj.total_seconds())
-                    
-                    cur.execute(
-                        """
-                        INSERT INTO activities (id, name, start_date, distance, moving_time_seconds, elevation_gain)
-                        VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE 
-                        SET moving_time_seconds = EXCLUDED.moving_time_seconds,
-                            distance = EXCLUDED.distance,
-                            elevation_gain = EXCLUDED.elevation_gain;
-                        """,
-                        (activity.id, activity.name, activity.start_date_local, float(getattr(activity, 'distance', 0)) / 1000, duration_seconds, float(getattr(activity, 'total_elevation_gain', 0)))
-                    )
+            for activity in activities_iterator:
+                batch.append(activity)
+                if len(batch) >= batch_size:
+                    print(f"Traitement d'un lot de {len(batch)} activités...")
+                    with conn.cursor() as cur_batch:
+                        for act in reversed(batch):
+                            moving_time_obj = getattr(act, 'moving_time', None)
+                            elapsed_time_obj = getattr(act, 'elapsed_time', None)
+                            duration_seconds = 0
+                            if moving_time_obj: duration_seconds = int(moving_time_obj.total_seconds())
+                            elif elapsed_time_obj: duration_seconds = int(elapsed_time_obj.total_seconds())
+
+                            cur_batch.execute(
+                                """
+                                INSERT INTO activities (id, name, start_date, distance, moving_time_seconds, elevation_gain)
+                                VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE 
+                                SET moving_time_seconds = EXCLUDED.moving_time_seconds,
+                                    distance = EXCLUDED.distance,
+                                    elevation_gain = EXCLUDED.elevation_gain;
+                                """,
+                                (act.id, act.name, act.start_date_local, float(getattr(act, 'distance', 0)) / 1000, duration_seconds, float(getattr(act, 'total_elevation_gain', 0)))
+                            )
+                    conn.commit()
+                    total_synced += len(batch)
+                    print(f"{total_synced} activités synchronisées au total.")
+                    batch = []
+
+            # Traiter le dernier lot s'il n'est pas vide
+            if batch:
+                print(f"Traitement du dernier lot de {len(batch)} activités...")
+                with conn.cursor() as cur_batch:
+                    for act in reversed(batch):
+                         moving_time_obj = getattr(act, 'moving_time', None)
+                         elapsed_time_obj = getattr(act, 'elapsed_time', None)
+                         duration_seconds = 0
+                         if moving_time_obj: duration_seconds = int(moving_time_obj.total_seconds())
+                         elif elapsed_time_obj: duration_seconds = int(elapsed_time_obj.total_seconds())
+
+                         cur_batch.execute(
+                             """
+                             INSERT INTO activities (id, name, start_date, distance, moving_time_seconds, elevation_gain)
+                             VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE 
+                             SET moving_time_seconds = EXCLUDED.moving_time_seconds,
+                                 distance = EXCLUDED.distance,
+                                 elevation_gain = EXCLUDED.elevation_gain;
+                             """,
+                             (act.id, act.name, act.start_date_local, float(getattr(act, 'distance', 0)) / 1000, duration_seconds, float(getattr(act, 'total_elevation_gain', 0)))
+                         )
                 conn.commit()
-            else:
-                print("Base de données Strava déjà à jour.")
+                total_synced += len(batch)
 
+            if total_synced == 0:
+                print("Base de données Strava déjà à jour.")
+            else:
+                print(f"Synchronisation terminée. {total_synced} activités ajoutées/mises à jour.")
+            # --- FIN DE L'OPTIMISATION ---
+            
         with conn.cursor() as cur:
             cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain, polyline FROM activities ORDER BY start_date DESC LIMIT 10")
             activities_from_db = [{"name": r[1], "id": r[0], "start_date_local": r[2].isoformat(), "moving_time": str(timedelta(seconds=int(r[3] or 0))), "distance": r[4] * 1000, "total_elevation_gain": r[5], "map_polyline": r[6]} for r in cur.fetchall()]
