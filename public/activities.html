@@ -176,40 +176,7 @@
         function renderGoalChart(canvasId,data, chartInstance){ if(chartInstance){chartInstance.destroy()} const ctx=document.getElementById(canvasId).getContext("2d"); return new Chart(ctx,{type:"doughnut",data:{datasets:[{data:[data.current,Math.max(0,data.goal-data.current)],backgroundColor:["#fc5200","#d8d9dd"],borderWidth:0,borderRadius:0}]},options:{responsive:!0,maintainAspectRatio:!1,cutout:"75%",plugins:{legend:{display:!1},tooltip:{enabled:!1}}}});}
         function createStatDetail(icon, label, value, unit = '') { return `<div class="stat-item"><div class="stat-label"><i data-lucide="${icon}"></i>${label}</div><div class="stat-value">${value} <span class="unit">${unit}</span></div></div>`; }
         function formatDate(d) { return new Date(d).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); }
-// NOUVELLE ET DERNIÈRE VERSION CORRIGÉE
-function formatMovingTime(timeValue) {
-    // Gère le cas où la durée est nulle ou vide
-    if (!timeValue) {
-        return 'N/A';
-    }
-
-    const parts = timeValue.split(':').map(Number);
-    
-    if (parts.length === 3) {
-        const [h, m, s] = parts;
-
-        // --- CORRECTION AJOUTÉE ICI ---
-        // Si le total est 0 seconde, on affiche N/A
-        if (h === 0 && m === 0 && s === 0) {
-            return 'N/A';
-        }
-        // --- FIN DE LA CORRECTION ---
-
-        if (h > 0) {
-            // Si la durée fait plus d'une heure
-            return m > 0 ? `${h}h ${m}min` : `${h}h`;
-        } else if (m > 0) {
-            // Si la durée est entre 1 minute et 1 heure
-            return `${m}min ${s}s`;
-        } else {
-            // Si la durée est de moins d'une minute
-            return `${s}s`;
-        }
-    }
-
-    // Fallback au cas où le format serait inattendu
-    return timeValue;
-}
+        function formatMovingTime(timeValue) { if (!timeValue) return 'N/A'; const parts=timeValue.split(':').map(Number);if(parts.length===3){const[h,m,s]=parts;if(h>0)return`${h}h ${m}min`;return`${m}min ${s}s`;}const totalSeconds=parseInt(timeValue,10);if(isNaN(totalSeconds))return timeValue;const h=Math.floor(totalSeconds/3600);const m=Math.floor((totalSeconds%3600)/60);const s=totalSeconds%60;if(h>0)return`${h}h ${m}min`;return`${m}min ${s}s`;}
         function renderMap(encodedPolyline, zwiftWorld = null){const mapContainer=document.getElementById("map-container");mapContainer.innerHTML='<div id="map"></div>';if(!encodedPolyline){document.getElementById('map').innerHTML='<div style="text-align: center; padding-top: 50px; color: var(--gray-500);">Données de carte non disponibles.</div>';return}try{const map=L.map("map");if(zwiftWorld){L.tileLayer("https://api.zwifthacks.com/zwiftmap/tiles/{world}/{z}/{x}/{y}.png",{world:zwiftWorld,attribution:'&copy; <a href="https://zwiftmap.com">ZwiftMap</a>'}).addTo(map)}else{L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:'&copy; OSM'}).addTo(map)}const decodedPath=decodePolyline(encodedPolyline);if(decodedPath&&decodedPath.length>0){const polyline=L.polyline(decodedPath,{color:"#fc5200",weight:2}).addTo(map);map.fitBounds(polyline.getBounds().pad(.1))}}catch(e){console.error("Erreur carte:",e)}}
         function renderChart(d, canvasId){if(elevationChart){elevationChart.destroy()}const x=document.getElementById(canvasId).getContext("2d");const g=x.createLinearGradient(0,0,0,250);g.addColorStop(0,"rgba(252,76,2,0.4)"),g.addColorStop(1,"rgba(252,76,2,0)");elevationChart=new Chart(x,{type:"line",data:{labels:d.distance.map(v=>(v/1000).toFixed(1)),datasets:[{label:"Altitude (m)",data:d.altitude,borderColor:"#fc5200",backgroundColor:g,borderWidth:2,pointRadius:0,fill:!0,tension:.3}]},options:{responsive:!0,maintainAspectRatio:!1,scales:{x:{title:{display:true,text:"Distance (km)"}},y:{title:{display:true,text:"Altitude (m)"}}},plugins:{legend:{display:!1}}}});}
         function renderFitnessFatigueChart(data) {
