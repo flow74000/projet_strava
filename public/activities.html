@@ -69,7 +69,11 @@
                 <a href="#">Entrainement</a>
                 <a href="#">Historique</a>
             </nav>
-            <div class="dashboard-header"><h1 >Mon Tableau de Bord</h1><button id="logout-button" style="padding: 8px 12px; border: 1px solid var(--gray-200); border-radius: 6px; cursor: pointer;">Déconnexion</button></div>
+<div class="dashboard-header">
+    <h1>Mon Tableau de Bord</h1>
+    <div class="goals-container" id="goals-container"></div>
+    <button id="logout-button" style="...">Déconnexion</button>
+</div>
             <div class="card"><h2 >Condition Physique</h2><div class="fitness-section"><div id="fitness-summary-cards" class="fitness-stats-cards"></div><div id="charts-column"><div class="fitness-chart-container"><canvas id="fitnessFatigueChart"></canvas></div><div class="form-chart-container"><canvas id="formChart"></canvas></div></div></div></div>
             <div class="card" id="progression-card" style="display: none;"><h2>Progression Annuelle</h2><div class="chart-container"><canvas id="progressionChart"></canvas></div></div>
             <div class="card"><h2 id="latest-activity-title">Dernière Activité</h2><div class="latest-activity-grid"><div id="summary-details-container" class="summary-panel"></div><div id="map-container"></div></div><div id="elevation-chart-card" style="display: none;" class="mt-6"><div class="chart-container" style="height: 200px;"><canvas id="elevationChart"></canvas></div></div></div>
