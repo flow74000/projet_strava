@@ -1,4 +1,4 @@
-# Fichier: app.py (Version finale, avec correction de l'objet Duration)
+# Fichier: app.py (Version finale, avec correction des "goals" manquants et autres améliorations)
 
 import os
 import requests
@@ -17,9 +17,14 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 app = Flask(__name__)
-cors = CORS(app, resources={ r"/api/*": { "origins": "https://projet-strava.onrender.com" } })
+cors = CORS(app, resources={
+    r"/api/*": {
+        "origins": "https://projet-strava.onrender.com"
+    }
+})
 
 # --- Fonctions de récupération de données ---
+
 def get_fitness_data(latest_weight=None):
     """Récupère les données de forme depuis l'API Intervals.icu."""
     try:
@@ -154,18 +159,19 @@ def strava_handler():
             if new_activities:
                 print(f"{len(new_activities)} nouvelle(s) activité(s) trouvée(s).")
                 for activity in reversed(new_activities):
-                    
-                    # --- CORRECTION DE LA GESTION DE LA DURÉE ---
+                    moving_time_obj = getattr(activity, 'moving_time', None)
+                    elapsed_time_obj = getattr(activity, 'elapsed_time', None)
                     duration_seconds = 0
-                    time_obj = getattr(activity, 'moving_time', None) or getattr(activity, 'elapsed_time', None)
-                    if time_obj:
-                        if hasattr(time_obj, 'total_seconds'):
-                            # Cas d'un objet timedelta standard
-                            duration_seconds = int(time_obj.total_seconds())
+                    if moving_time_obj:
+                        if hasattr(moving_time_obj, 'total_seconds'):
+                            duration_seconds = int(moving_time_obj.total_seconds())
                         else:
-                            # Cas d'un objet Duration de stravalib
-                            duration_seconds = int(time_obj)
-                    # --- FIN DE LA CORRECTION ---
+                            duration_seconds = int(moving_time_obj)
+                    elif elapsed_time_obj:
+                        if hasattr(elapsed_time_obj, 'total_seconds'):
+                            duration_seconds = int(elapsed_time_obj.total_seconds())
+                        else:
+                            duration_seconds = int(elapsed_time_obj)
                     
                     cur.execute(
                         """
@@ -200,10 +206,21 @@ def strava_handler():
         athlete = authed_client.get_athlete()
         stats = authed_client.get_athlete_stats(athlete.id)
         
+        # --- On reconstruit l'objet "goals" ici ---
+        ytd_distance = float(stats.ytd_ride_totals.distance) / 1000
+        yearly_summary = {"current": ytd_distance, "goal": 8000}
+        
+        today = date.today()
+        start_of_week = today - timedelta(days=today.weekday())
+        weekly_distance = sum(act['distance'] / 1000 for act in activities_from_db if datetime.fromisoformat(act['start_date_local']).date() >= start_of_week)
+        weekly_summary = {"current": weekly_distance, "goal": 200}
+        
         conn.close()
 
+        # On renvoie la réponse JSON complète
         return jsonify({
             "activities": activities_from_db,
+            "goals": {"weekly": weekly_summary, "yearly": yearly_summary}, # <-- "goals" est restauré ici
             "fitness_summary": fitness_summary,
             "form_chart_data": form_chart_data,
         })
