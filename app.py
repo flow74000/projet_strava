@@ -17,6 +17,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 app = Flask(__name__)
+# Configuration CORS explicite pour autoriser votre site web
 cors = CORS(app, resources={
     r"/api/*": {
         "origins": "https://projet-strava.onrender.com"
@@ -136,25 +137,20 @@ def weight_api_handler():
 
 @app.route("/api/activity/<int:activity_id>")
 def activity_detail_handler(activity_id):
-    """Récupère les détails complets (carte, etc.) pour une seule activité."""
     try:
         code = request.args.get('code')
         if not code:
             return jsonify({"error": "Code d'autorisation manquant pour récupérer les détails"}), 400
-
         client = Client()
         token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=code)
         authed_client = Client(access_token=token_response['access_token'])
-
         print(f"Récupération des streams pour l'activité ID: {activity_id}")
         streams = authed_client.get_activity_streams(activity_id, types=['latlng', 'altitude', 'distance'])
-        
         details = {}
         if streams and 'latlng' in streams:
             details['map_polyline'] = polyline.encode(streams['latlng'].data)
         if streams and 'distance' in streams and 'altitude' in streams:
             details['elevation_data'] = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
-            
         return jsonify(details)
     except Exception as e:
         print(traceback.format_exc())
@@ -193,15 +189,19 @@ def strava_handler():
                         else:
                             duration_seconds = int(moving_time_obj)
                     
+                    streams = authed_client.get_activity_streams(activity.id, types=['latlng'])
+                    encoded_polyline = polyline.encode(streams['latlng'].data) if streams and 'latlng' in streams else None
+                    
                     cur.execute(
                         """
-                        INSERT INTO activities (id, name, start_date, distance, moving_time_seconds, elevation_gain)
-                        VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE 
+                        INSERT INTO activities (id, name, start_date, distance, moving_time_seconds, elevation_gain, polyline)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE 
                         SET moving_time_seconds = EXCLUDED.moving_time_seconds,
                             distance = EXCLUDED.distance,
-                            elevation_gain = EXCLUDED.elevation_gain;
+                            elevation_gain = EXCLUDED.elevation_gain,
+                            polyline = EXCLUDED.polyline;
                         """,
-                        (activity.id, activity.name, activity.start_date_local, float(getattr(activity, 'distance', 0)) / 1000, duration_seconds, float(getattr(activity, 'total_elevation_gain', 0)))
+                        (activity.id, activity.name, activity.start_date_local, float(getattr(activity, 'distance', 0)) / 1000, duration_seconds, float(getattr(activity, 'total_elevation_gain', 0)), encoded_polyline)
                     )
                 conn.commit()
             else:
@@ -211,11 +211,9 @@ def strava_handler():
             cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain, polyline FROM activities ORDER BY start_date DESC LIMIT 10")
             activities_from_db = [{"name": r[1], "id": r[0], "start_date_local": r[2].isoformat(), "moving_time": str(timedelta(seconds=int(r[3] or 0))), "distance": r[4] * 1000, "total_elevation_gain": r[5], "map_polyline": r[6]} for r in cur.fetchall()]
         
-        # On ne récupère les streams que pour la dernière activité pour accélérer le chargement
-        if activities_from_db and not activities_from_db[0].get('map_polyline'):
+        if activities_from_db and not activities_from_db[0].get('map_polyline'): # Just in case
             try:
                 streams = authed_client.get_activity_streams(activities_from_db[0]['id'], types=['altitude', 'distance'])
-                # La polyline est déjà dans la DB pour les activités synchronisées
                 if streams and 'distance' in streams and 'altitude' in streams:
                     activities_from_db[0]['elevation_data'] = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
             except exc.ObjectNotFound: pass
