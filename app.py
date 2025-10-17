@@ -1,4 +1,4 @@
-# Fichier: app.py (Version finale, avec toutes les corrections)
+# Fichier: app.py (Version finale avec gestion des sessions)
 
 import os
 import requests
@@ -6,25 +6,34 @@ import traceback
 import psycopg2
 import polyline
 from datetime import date, timedelta, datetime, timezone
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, session, redirect
 from flask_cors import CORS
 from stravalib.client import Client
 from stravalib import exc
 from collections import defaultdict
+from flask_session import Session # Nouvel import
 
 # Imports pour l'API Google Fit
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 app = Flask(__name__)
-# Configuration CORS explicite pour autoriser votre site web
+
+# --- CONFIGURATION DES SESSIONS ---
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY")
+app.config["SESSION_TYPE"] = "filesystem" 
+app.config["SESSION_PERMANENT"] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30) # La session dure 30 jours
+Session(app)
+# --------------------------------
+
 cors = CORS(app, resources={
     r"/api/*": {
         "origins": "https://projet-strava.onrender.com"
     }
 })
 
-# --- Fonctions de récupération de données ---
+# --- Fonctions de récupération de données (inchangées) ---
 
 def get_fitness_data(latest_weight=None):
     """Récupère les données de forme depuis l'API Intervals.icu."""
@@ -113,7 +122,33 @@ def serve_index(): return send_from_directory('.', 'activities.html')
 @app.route('/<path:path>')
 def serve_static_files(path): return send_from_directory('.', path)
 
-# --- Routes API ---
+# --- NOUVELLES ROUTES POUR L'AUTHENTIFICATION ---
+@app.route("/api/check_auth")
+def check_auth():
+    """Vérifie si l'utilisateur a une session valide."""
+    if 'strava_token' in session and datetime.now().timestamp() < session.get('strava_token', {}).get('expires_at', 0):
+        return jsonify({"authenticated": True})
+    return jsonify({"authenticated": False})
+
+@app.route("/api/login")
+def login():
+    """Redirige l'utilisateur vers la page d'autorisation de Strava."""
+    client = Client()
+    authorize_url = client.authorization_url(
+        client_id=os.environ.get("STRAVA_CLIENT_ID"),
+        redirect_uri="https://projet-strava.onrender.com/activities.html",
+        scope=['read', 'activity:read_all']
+    )
+    return redirect(authorize_url)
+
+@app.route("/api/logout")
+def logout():
+    """Efface la session de l'utilisateur."""
+    session.clear()
+    return jsonify({"status": "logged_out"})
+
+
+# --- ROUTES API POUR LES DONNÉES ---
 @app.route("/api/yearly_progress")
 def yearly_progress_handler():
     try:
@@ -138,12 +173,12 @@ def weight_api_handler():
 @app.route("/api/activity/<int:activity_id>")
 def activity_detail_handler(activity_id):
     try:
-        code = request.args.get('code')
-        if not code:
-            return jsonify({"error": "Code d'autorisation manquant pour récupérer les détails"}), 400
-        client = Client()
-        token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=code)
+        if 'strava_token' not in session:
+            return jsonify({"error": "Non authentifié"}), 401
+            
+        token_response = session['strava_token']
         authed_client = Client(access_token=token_response['access_token'])
+
         print(f"Récupération des streams pour l'activité ID: {activity_id}")
         streams = authed_client.get_activity_streams(activity_id, types=['latlng', 'altitude', 'distance'])
         details = {}
@@ -159,10 +194,34 @@ def activity_detail_handler(activity_id):
 @app.route("/api/strava")
 def strava_handler():
     try:
-        client = Client()
-        token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=request.args.get('code'))
-        authed_client = Client(access_token=token_response['access_token'])
+        authed_client = None
+        code = request.args.get('code')
+
+        if code:
+            print("Nouvelle authentification via code, échange contre des tokens...")
+            client = Client()
+            token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=code)
+            session['strava_token'] = token_response
+            authed_client = Client(access_token=token_response['access_token'])
         
+        elif 'strava_token' in session:
+            print("Utilisateur authentifié via session.")
+            token_response = session['strava_token']
+            client = Client()
+            
+            if datetime.now().timestamp() > token_response['expires_at']:
+                print("Token expiré, rafraîchissement...")
+                new_token = client.refresh_access_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), refresh_token=token_response['refresh_token'])
+                session['strava_token'] = new_token
+                authed_client = Client(access_token=new_token['access_token'])
+                print("Token rafraîchi.")
+            else:
+                authed_client = Client(access_token=token_response['access_token'])
+        
+        if not authed_client:
+            return jsonify({"error": "Utilisateur non authentifié"}), 401
+
+        # --- Le reste de la fonction (synchronisation, etc.) est le même ---
         print("Début de la synchronisation intelligente avec Strava...")
         DATABASE_URL = os.environ.get('DATABASE_URL')
         conn = psycopg2.connect(DATABASE_URL)
@@ -184,10 +243,8 @@ def strava_handler():
                     moving_time_obj = getattr(activity, 'moving_time', None) or getattr(activity, 'elapsed_time', None)
                     duration_seconds = 0
                     if moving_time_obj:
-                        if hasattr(moving_time_obj, 'total_seconds'):
-                            duration_seconds = int(moving_time_obj.total_seconds())
-                        else:
-                            duration_seconds = int(moving_time_obj)
+                        if hasattr(moving_time_obj, 'total_seconds'): duration_seconds = int(moving_time_obj.total_seconds())
+                        else: duration_seconds = int(moving_time_obj)
                     
                     streams = authed_client.get_activity_streams(activity.id, types=['latlng'])
                     encoded_polyline = polyline.encode(streams['latlng'].data) if streams and 'latlng' in streams else None
@@ -196,10 +253,7 @@ def strava_handler():
                         """
                         INSERT INTO activities (id, name, start_date, distance, moving_time_seconds, elevation_gain, polyline)
                         VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO UPDATE 
-                        SET moving_time_seconds = EXCLUDED.moving_time_seconds,
-                            distance = EXCLUDED.distance,
-                            elevation_gain = EXCLUDED.elevation_gain,
-                            polyline = EXCLUDED.polyline;
+                        SET moving_time_seconds = EXCLUDED.moving_time_seconds, distance = EXCLUDED.distance, elevation_gain = EXCLUDED.elevation_gain, polyline = EXCLUDED.polyline;
                         """,
                         (activity.id, activity.name, activity.start_date_local, float(getattr(activity, 'distance', 0)) / 1000, duration_seconds, float(getattr(activity, 'total_elevation_gain', 0)), encoded_polyline)
                     )
@@ -211,7 +265,7 @@ def strava_handler():
             cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain, polyline FROM activities ORDER BY start_date DESC LIMIT 10")
             activities_from_db = [{"name": r[1], "id": r[0], "start_date_local": r[2].isoformat(), "moving_time": str(timedelta(seconds=int(r[3] or 0))), "distance": r[4] * 1000, "total_elevation_gain": r[5], "map_polyline": r[6]} for r in cur.fetchall()]
         
-        if activities_from_db and not activities_from_db[0].get('map_polyline'): # Just in case
+        if activities_from_db and not activities_from_db[0].get('map_polyline'):
             try:
                 streams = authed_client.get_activity_streams(activities_from_db[0]['id'], types=['altitude', 'distance'])
                 if streams and 'distance' in streams and 'altitude' in streams:
