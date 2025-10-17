@@ -1,4 +1,4 @@
-# Fichier: app.py (Version finale, avec correction des "goals" manquants et autres améliorations)
+# Fichier: app.py (Version finale, avec toutes les corrections)
 
 import os
 import requests
@@ -134,6 +134,32 @@ def weight_api_handler():
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
+@app.route("/api/activity/<int:activity_id>")
+def activity_detail_handler(activity_id):
+    """Récupère les détails complets (carte, etc.) pour une seule activité."""
+    try:
+        code = request.args.get('code')
+        if not code:
+            return jsonify({"error": "Code d'autorisation manquant pour récupérer les détails"}), 400
+
+        client = Client()
+        token_response = client.exchange_code_for_token(client_id=os.environ.get("STRAVA_CLIENT_ID"), client_secret=os.environ.get("STRAVA_CLIENT_SECRET"), code=code)
+        authed_client = Client(access_token=token_response['access_token'])
+
+        print(f"Récupération des streams pour l'activité ID: {activity_id}")
+        streams = authed_client.get_activity_streams(activity_id, types=['latlng', 'altitude', 'distance'])
+        
+        details = {}
+        if streams and 'latlng' in streams:
+            details['map_polyline'] = polyline.encode(streams['latlng'].data)
+        if streams and 'distance' in streams and 'altitude' in streams:
+            details['elevation_data'] = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
+            
+        return jsonify(details)
+    except Exception as e:
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
 @app.route("/api/strava")
 def strava_handler():
     try:
@@ -159,19 +185,13 @@ def strava_handler():
             if new_activities:
                 print(f"{len(new_activities)} nouvelle(s) activité(s) trouvée(s).")
                 for activity in reversed(new_activities):
-                    moving_time_obj = getattr(activity, 'moving_time', None)
-                    elapsed_time_obj = getattr(activity, 'elapsed_time', None)
+                    moving_time_obj = getattr(activity, 'moving_time', None) or getattr(activity, 'elapsed_time', None)
                     duration_seconds = 0
                     if moving_time_obj:
                         if hasattr(moving_time_obj, 'total_seconds'):
                             duration_seconds = int(moving_time_obj.total_seconds())
                         else:
                             duration_seconds = int(moving_time_obj)
-                    elif elapsed_time_obj:
-                        if hasattr(elapsed_time_obj, 'total_seconds'):
-                            duration_seconds = int(elapsed_time_obj.total_seconds())
-                        else:
-                            duration_seconds = int(elapsed_time_obj)
                     
                     cur.execute(
                         """
@@ -191,11 +211,13 @@ def strava_handler():
             cur.execute("SELECT id, name, start_date, moving_time_seconds, distance, elevation_gain, polyline FROM activities ORDER BY start_date DESC LIMIT 10")
             activities_from_db = [{"name": r[1], "id": r[0], "start_date_local": r[2].isoformat(), "moving_time": str(timedelta(seconds=int(r[3] or 0))), "distance": r[4] * 1000, "total_elevation_gain": r[5], "map_polyline": r[6]} for r in cur.fetchall()]
         
+        # On ne récupère les streams que pour la dernière activité pour accélérer le chargement
         if activities_from_db and not activities_from_db[0].get('map_polyline'):
             try:
-                streams = authed_client.get_activity_streams(activities_from_db[0]['id'], types=['latlng', 'altitude', 'distance'])
-                if streams and 'latlng' in streams: activities_from_db[0]['map_polyline'] = polyline.encode(streams['latlng'].data)
-                if streams and 'distance' in streams and 'altitude' in streams: activities_from_db[0]['elevation_data'] = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
+                streams = authed_client.get_activity_streams(activities_from_db[0]['id'], types=['altitude', 'distance'])
+                # La polyline est déjà dans la DB pour les activités synchronisées
+                if streams and 'distance' in streams and 'altitude' in streams:
+                    activities_from_db[0]['elevation_data'] = {'distance': streams['distance'].data, 'altitude': streams['altitude'].data}
             except exc.ObjectNotFound: pass
 
         weight_history = get_weight_data()
@@ -205,8 +227,6 @@ def strava_handler():
         
         athlete = authed_client.get_athlete()
         stats = authed_client.get_athlete_stats(athlete.id)
-        
-        # --- On reconstruit l'objet "goals" ici ---
         ytd_distance = float(stats.ytd_ride_totals.distance) / 1000
         yearly_summary = {"current": ytd_distance, "goal": 8000}
         
@@ -217,10 +237,9 @@ def strava_handler():
         
         conn.close()
 
-        # On renvoie la réponse JSON complète
         return jsonify({
             "activities": activities_from_db,
-            "goals": {"weekly": weekly_summary, "yearly": yearly_summary}, # <-- "goals" est restauré ici
+            "goals": {"weekly": weekly_summary, "yearly": yearly_summary},
             "fitness_summary": fitness_summary,
             "form_chart_data": form_chart_data,
         })
