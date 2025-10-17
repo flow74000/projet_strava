@@ -19,6 +19,7 @@
         .main-nav a { font-weight: 600; text-align: center; color: var(--gray-500); border-bottom: 3px solid transparent; padding: 1rem; text-decoration: none; transition: all 0.2s ease-in-out; }
         .main-nav a:hover { color: var(--gray-800); border-bottom-color: var(--gray-300); }
         .main-nav a.active { color: var(--strava-orange); border-bottom-color: var(--strava-orange); }
+        .login-button { background-color: var(--strava-orange); color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 20px; }
         .dashboard-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 20px; }
         .goals-container { display: flex; gap: 24px; }
         .goal-stat { display: flex; align-items: center; gap: 16px; }
@@ -53,15 +54,22 @@
 </head>
 <body>
     <div class="main-container">
-        <nav class="main-nav">
-            <a href="URL_D_AUTORISATION_STRAVA_A_REMPLACER" class="active">Accueil</a>
-            <a href="/nutrition.html">Nutrition</a>
-            <a href="#">Entrainement</a>
-            <a href="#">Historique</a>
-        </nav>
-        <div id="status-container" class="card" style="text-align: center; font-size: 1.2em; font-weight: bold; padding: 40px;">Chargement des données...</div>
+        <div id="login-container" class="card" style="display: none; text-align: center; padding: 40px;">
+            <h1>Bienvenue sur votre Tableau de Bord</h1>
+            <p>Veuillez vous connecter avec Strava pour afficher vos données.</p>
+            <a href="https://projet-strava-api.onrender.com/api/login" class="login-button">Se connecter avec Strava</a>
+        </div>
+
+        <div id="status-container" class="card" style="text-align: center; font-size: 1.2em; font-weight: bold; padding: 40px;">Vérification de l'authentification...</div>
+        
         <div id="content-wrapper" style="display: none;">
-            <div class="dashboard-header"><h1 >Mon Tableau de Bord</h1><div class="goals-container" id="goals-container"></div></div>
+            <nav class="main-nav">
+                <a href="/activities.html" class="active">Accueil</a>
+                <a href="/nutrition.html">Nutrition</a>
+                <a href="#">Entrainement</a>
+                <a href="#">Historique</a>
+            </nav>
+            <div class="dashboard-header"><h1 >Mon Tableau de Bord</h1><button id="logout-button" style="padding: 8px 12px; border: 1px solid var(--gray-200); border-radius: 6px; cursor: pointer;">Déconnexion</button></div>
             <div class="card"><h2 >Condition Physique</h2><div class="fitness-section"><div id="fitness-summary-cards" class="fitness-stats-cards"></div><div id="charts-column"><div class="fitness-chart-container"><canvas id="fitnessFatigueChart"></canvas></div><div class="form-chart-container"><canvas id="formChart"></canvas></div></div></div></div>
             <div class="card" id="progression-card" style="display: none;"><h2>Progression Annuelle</h2><div class="chart-container"><canvas id="progressionChart"></canvas></div></div>
             <div class="card"><h2 id="latest-activity-title">Dernière Activité</h2><div class="latest-activity-grid"><div id="summary-details-container" class="summary-panel"></div><div id="map-container"></div></div><div id="elevation-chart-card" style="display: none;" class="mt-6"><div class="chart-container" style="height: 200px;"><canvas id="elevationChart"></canvas></div></div></div>
@@ -77,15 +85,78 @@
     
     <script>
         let allActivitiesData = [], weeklyGoalChart, yearlyGoalChart, formChart, elevationChart, fitnessFatigueChart, progressionChart;
+        
+        const API_BASE_URL = "https://projet-strava-api.onrender.com";
+
         document.addEventListener('DOMContentLoaded', () => {
-            const API_BASE_URL = "https://projet-strava-api.onrender.com";
+            const loginContainer = document.getElementById('login-container');
             const statusContainer = document.getElementById('status-container');
             const contentWrapper = document.getElementById('content-wrapper');
             const stravaCode = new URLSearchParams(window.location.search).get('code');
-            if (!stravaCode) { statusContainer.innerHTML = "<h1>Erreur : Code d'autorisation manquant.</h1>"; return; }
-            fetch(`${API_BASE_URL}/api/strava?code=${stravaCode}`).then(response => response.json().then(data => ({ ok: response.ok, data }))).then(({ ok, data }) => { if (!ok) throw new Error(data.error || 'Erreur inconnue du serveur'); statusContainer.style.display = 'none'; contentWrapper.style.display = 'block'; allActivitiesData = data.activities; renderPage(data); }).catch(error => { console.error("Erreur:", error); statusContainer.innerHTML = `<h1>Une erreur est survenue</h1><p>${error.message}</p>`; });
+
+            fetch(`${API_BASE_URL}/api/check_auth`)
+                .then(res => res.json())
+                .then(authData => {
+                    if (authData.authenticated) {
+                        console.log("Utilisateur authentifié par session.");
+                        fetchData();
+                    } 
+                    else if (stravaCode) {
+                        console.log("Nouvelle authentification via code Strava.");
+                        fetchData(stravaCode);
+                    } 
+                    else {
+                        console.log("Utilisateur non authentifié.");
+                        statusContainer.style.display = 'none';
+                        loginContainer.style.display = 'block';
+                    }
+                })
+                .catch(err => {
+                    statusContainer.innerHTML = `<h1>Une erreur de connexion est survenue</h1><p>${err.message}</p>`;
+                });
         });
 
+        function fetchData(code = null) {
+            const statusContainer = document.getElementById('status-container');
+            statusContainer.innerHTML = 'Chargement des données...';
+            statusContainer.style.display = 'block';
+
+            let url = `${API_BASE_URL}/api/strava`;
+            if (code) {
+                url += `?code=${code}`;
+            }
+
+            fetch(url)
+                .then(response => {
+                    if (response.status === 401) {
+                        window.location.href = `${API_BASE_URL}/api/login`;
+                        return;
+                    }
+                    if (!response.ok) throw new Error('Erreur serveur lors de la récupération des données.');
+                    return response.json();
+                })
+                .then(data => {
+                    if (!data) return;
+                    statusContainer.style.display = 'none';
+                    document.getElementById('content-wrapper').style.display = 'block';
+                    allActivitiesData = data.activities; 
+                    renderPage(data);
+                    
+                    window.history.replaceState({}, document.title, "/activities.html");
+                })
+                .catch(error => { 
+                    console.error("Erreur:", error); 
+                    statusContainer.innerHTML = `<h1>Une erreur est survenue</h1><p>${error.message}</p>`; 
+                });
+        }
+
+        document.getElementById('logout-button')?.addEventListener('click', () => {
+            fetch(`${API_BASE_URL}/api/logout`)
+                .then(() => {
+                    window.location.href = '/activities.html';
+                });
+        });
+        
         function renderPage(data, selectedIndex = 0) {
             renderGoals(data.goals);
             renderFitnessSummary(data.fitness_summary);
@@ -94,7 +165,7 @@
                 renderFitnessFatigueChart(data.form_chart_data);
                 renderFormChart(data.form_chart_data);
             }
-            fetch("https://projet-strava-api.onrender.com/api/yearly_progress")
+            fetch(`${API_BASE_URL}/api/yearly_progress`)
                 .then(response => response.json())
                 .then(progressData => {
                     if (Object.keys(progressData).length > 0) {
@@ -152,13 +223,21 @@
             const ctx = document.getElementById('fitnessFatigueChart').getContext('2d');
             const labels = data.map(d => new Date(d.id));
             const ctlData = data.map(d => d.ctl);
+            const atlData = data.map(d => d.atl);
             fitnessFatigueChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [ { label: 'Fitness', data: ctlData, borderColor: 'rgba(252, 76, 2, 0.8)', backgroundColor: 'rgba(252, 76, 2, 0.1)', borderWidth: 2, tension: 0.4, fill: true, pointRadius: 0 } ]
+                    datasets: [
+                        { label: 'Fitness (CTL)', data: ctlData, borderColor: 'var(--strava-orange)', backgroundColor: 'rgba(252, 82, 0, 0.1)', borderWidth: 2, tension: 0.4, fill: true, pointRadius: 0 },
+                        { label: 'Fatigue (ATL)', data: atlData, borderColor: 'var(--gray-500)', backgroundColor: 'rgba(107, 114, 128, 0.1)', borderWidth: 1.5, tension: 0.4, fill: true, pointRadius: 0 }
+                    ]
                 },
-                options: { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: false } }, y: { title: { display: true, text: 'Fitness' } } }, plugins: { legend: { display: false } } }
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { x: { type: 'time', time: { unit: 'week' }, grid: { display: false } }, y: { title: { display: true, text: 'Charge d\'entraînement' } } },
+                    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true } } }
+                }
             });
         }
         
@@ -167,18 +246,25 @@
             const ctx = document.getElementById('formChart').getContext('2d');
             const labels = data.map(d => new Date(d.id));
             const tsbData = data.map(d => (d.ctl != null && d.atl != null) ? d.ctl - d.atl : null);
+            const getFormColor = (value) => {
+                if (value === null || isNaN(value)) return 'rgba(107, 114, 128, 0.5)';
+                if (value > 5) return 'var(--form-blue)';
+                if (value > -10) return 'var(--form-green)';
+                if (value > -25) return 'var(--gray-500)';
+                return 'var(--form-red)';
+            };
             formChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [{ label: 'Forme', data: tsbData, borderColor: 'rgb(119, 119, 119)', borderWidth: 2, tension: 0.4, pointRadius: 0 }]
+                    datasets: [{ label: 'Forme (TSB)', data: tsbData, borderWidth: 2.5, tension: 0.4, pointRadius: 0, segment: { borderColor: ctx => getFormColor(ctx.p1.raw) } }]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
-                    scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: false } }, y: { title: { display: true, text: 'Forme' } } },
+                    scales: { x: { type: 'time', time: { unit: 'week' } }, y: { title: { display: true, text: 'Forme (TSB)' } } },
                     plugins: {
                         legend: { display: false },
-                        annotation: { annotations: { highRisk: { type: 'box', yMin: -Infinity, yMax: -30, backgroundColor: 'rgba(239, 68, 68, 0.2)', borderColor: 'transparent' }, greyZone: { type: 'box', yMin: -30, yMax: -10, backgroundColor: 'rgba(34, 197, 94, 0.2)', borderColor: 'transparent' }, optimal: { type: 'box', yMin: -10, yMax: 5, backgroundColor: 'rgba(107, 114, 128, 0.2)', borderColor: 'transparent' }, fresh: { type: 'box', yMin: 5, yMax: Infinity, backgroundColor: 'rgba(59, 130, 246, 0.2)', borderColor: 'transparent' } } }
+                        annotation: { annotations: { highRisk: { type: 'box', yMin: -Infinity, yMax: -25, backgroundColor: 'rgba(239, 68, 68, 0.05)', borderColor: 'transparent' }, greyZone: { type: 'box', yMin: -25, yMax: -10, backgroundColor: 'rgba(107, 114, 128, 0.05)', borderColor: 'transparent' }, optimal: { type: 'box', yMin: -10, yMax: 5, backgroundColor: 'rgba(34, 197, 94, 0.05)', borderColor: 'transparent' }, fresh: { type: 'box', yMin: 5, yMax: Infinity, backgroundColor: 'rgba(59, 130, 246, 0.05)', borderColor: 'transparent' } } }
                     }
                 }
             });
@@ -188,18 +274,16 @@
         function renderFitnessSummary(summary) { const container = document.getElementById('fitness-summary-cards'); if (!summary) return; const getFormClass = (form) => { if (form==null) return ''; if (form > 5) return 'text-blue-500'; if (form > -10) return 'text-green-500'; if (form > -25) return 'text-gray-500'; return 'text-red-500'; }; container.innerHTML = `${createSummaryCard('trending-up', 'Fitness', summary.fitness)}${createSummaryCard('battery-low', 'Fatigue', summary.fatigue)}${createSummaryCard('activity', 'Forme', summary.form, `font-bold ${getFormClass(summary.form)}`)}${createSummaryCard('zap', 'VO2max', summary.vo2max)}`;}
         function renderActivityDetail(activities, index) { const title = document.getElementById('latest-activity-title'); const detailsContainer = document.getElementById('summary-details-container'); if (!activities || !activities.length) return; const activity = activities[index]; title.textContent = index === 0 ? "Dernière Activité" : "Détail de l'Activité"; detailsContainer.innerHTML = `<p class="date">${formatDate(activity.start_date_local)}</p><h3>${activity.name}</h3>${createStatDetail('ruler','Distance',`${(activity.distance/1000).toFixed(2)}`,'km')}${createStatDetail('timer','Durée',formatMovingTime(activity.moving_time))}${createStatDetail('trending-up','Dénivelé',`${activity.total_elevation_gain.toFixed(0)}`,'m')}`; renderMap(activity.map_polyline); const chartCard = document.getElementById('elevation-chart-card'); if (activity.elevation_data) { chartCard.style.display = 'block'; renderChart(activity.elevation_data, 'elevationChart'); } else { chartCard.style.display = 'none'; } }
         
-        // --- FONCTION MISE À JOUR ---
         function renderHistory(activities, selectedIndex) {
             const historyTableBody = document.getElementById('history-table-body');
             if (!activities || !activities.length) return;
             historyTableBody.innerHTML = '';
             activities.forEach((activity, index) => {
                 const row = document.createElement('tr');
-                // On met à jour la ligne 'selected' en comparant l'ID
                 if (activity.id === activities[selectedIndex].id) {
                     row.classList.add('selected');
                 }
-                row.dataset.id = activity.id; // On utilise l'ID de l'activité
+                row.dataset.id = activity.id;
                 row.innerHTML = `<td class="strava-orange">${activity.name}</td><td>${(activity.distance / 1000).toFixed(2)} km</td><td>${new Date(activity.start_date_local).toLocaleDateString('fr-FR')}</td>`;
                 historyTableBody.appendChild(row);
             });
@@ -207,7 +291,6 @@
             historyTableBody.addEventListener('click', handleHistoryClick);
         }
 
-        // --- FONCTION MISE À JOUR ---
         function handleHistoryClick(event) {
             const clickedRow = event.target.closest('tr');
             if (!clickedRow) return;
@@ -215,7 +298,6 @@
             const selectedActivityId = clickedRow.dataset.id;
             const selectedIndex = allActivitiesData.findIndex(act => act.id == selectedActivityId);
 
-            // Si l'activité a déjà une carte, on l'affiche directement
             if (allActivitiesData[selectedIndex] && allActivitiesData[selectedIndex].map_polyline) {
                 renderActivityDetail(allActivitiesData, selectedIndex);
                 renderHistory(allActivitiesData, selectedIndex);
@@ -223,21 +305,14 @@
                 return;
             }
 
-            // Sinon, on va chercher les détails via l'API
             const detailsContainer = document.getElementById('summary-details-container');
             detailsContainer.innerHTML = `<p>Chargement des détails de l'activité...</p>`;
-            document.getElementById('map-container').innerHTML = ''; // On vide la carte
+            document.getElementById('map-container').innerHTML = '';
 
-            const API_BASE_URL = "https://projet-strava-api.onrender.com";
-            const stravaCode = new URLSearchParams(window.location.search).get('code');
-
-            fetch(`${API_BASE_URL}/api/activity/${selectedActivityId}?code=${stravaCode}`)
+            fetch(`${API_BASE_URL}/api/activity/${selectedActivityId}`)
                 .then(response => response.json())
                 .then(activityDetails => {
-                    // On fusionne les détails obtenus avec les infos de base
                     allActivitiesData[selectedIndex] = { ...allActivitiesData[selectedIndex], ...activityDetails };
-                    
-                    // On ré-affiche le détail avec les nouvelles infos complètes
                     renderActivityDetail(allActivitiesData, selectedIndex);
                     renderHistory(allActivitiesData, selectedIndex);
                     lucide.createIcons();
